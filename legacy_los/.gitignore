@@ -1,0 +1,20 @@
+# Data & derived artefacts
+data/processed/
+data/raw/
+data/icd9to10gem/*.txt
+data/icd9to10gem/*.csv
+
+*.parquet
+*.rds
+results/**/checkpoints/
+# Extracted paper text (regenerated from the PDF on demand)
+paper_text.txt
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+venv/

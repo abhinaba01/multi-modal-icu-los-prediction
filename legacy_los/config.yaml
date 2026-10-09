@@ -1,0 +1,98 @@
+# Configuration for the faithful replication of Hempel et al. (2023),
+# "Prediction of Intensive Care Unit Length of Stay in the MIMIC-IV Dataset".
+#
+# Every value here is chosen to match the paper (source of truth) and the GitLab
+# reference R code. Where paper and code conflicted, the resolved choice is noted
+# inline and documented in README.md. Do NOT "tune" these values -- the paper
+# used defaults and no hyperparameter search.
+
+project:
+  name: "Hempel et al. ICU LOS replication"
+  # Base seed. The R code uses set.seed(666); we derive per-repeat seeds from it.
+  random_state: 666
+
+data:
+  # Raw MIMIC-IV v3.1 CSV(.gz) live in the sibling icu_los_prediction project.
+  # Override with an absolute path or set MIMIC_RAW_DIR in the environment.
+  raw_dir: "../los_prediction_replication/data/raw"
+  # Rows per chunk when streaming the large event tables (chartevents ~3.3 GB,
+  # labevents ~2.5 GB gzipped).
+  csv_chunksize: 2000000
+  files:
+    icustays: "icu/icustays.csv"
+    chartevents: "icu/chartevents.csv"
+    inputevents: "icu/inputevents.csv"
+    outputevents: "icu/outputevents.csv"
+    admissions: "hosp/admissions.csv"
+    patients: "hosp/patients.csv"
+    diagnoses_icd: "hosp/diagnoses_icd.csv"
+    labevents: "hosp/labevents.csv"
+  # CMS General Equivalence Mapping (ICD-9 -> ICD-10) crosswalk. This is what the
+  # R package `touch` wraps. See README for how to obtain it.
+  icd9to10_gem: "data/icd9to10gem/2018_I9gem.txt"
+
+# Where the assembled per-stay feature tables are written by build_features.py.
+features:
+  processed_dir: "data/processed"
+  hempel: "hempel_features.parquet"
+  hempel_sofa: "hempel_sofa_features.parquet"
+  hempel_sofa_dynamics: "hempel_sofa_dynamics_features.parquet"
+
+cohort:
+  # Paper + code: LOS strictly greater than 1 day and at most 21 days.
+  min_los_days_exclusive: 1
+  max_los_days: 21
+  # Paper says "adults older than 18"; the R code applies no age filter. MIMIC-IV
+  # is adults-only so >=18 reconciles both without changing the cohort.
+  min_age: 18
+  # Exclude ICU readmissions occurring within this many hours (paper: 48h).
+  readmission_hours: 48
+
+# First 24h observation window (hours). Vitals/labs summarised by their mean.
+observation_window_hours: 24
+
+# Physiologic ranges applied to the PER-STAY MEAN (matches data_preparation.R,
+# which cleans the already-averaged values). Tuple = (low, high, inclusive?).
+# Paper Table 2. Labs are NOT range-filtered (paper excluded no lab values).
+vital_mean_ranges:
+  heart_rate:  {low: 25,  high: 225, inclusive: true}   # [25, 225]
+  respiration: {low: 7,   high: 40,  inclusive: false}  # (7, 40)
+  saturation:  {low: 50,  high: 120, inclusive: false}  # (50, 120)
+  temperature: {low: 86,  high: 113, inclusive: true}   # [86, 113] degrees F
+
+classification:
+  # Paper dichotomises at the 3rd quartile of LOS (~4 days). We compute Q3 from
+  # the cohort; the R code hardcoded 4. Set to a number to override.
+  threshold: "q3"
+  # Class encoding: short (<= threshold) = 0, long (> threshold) = 1. Positive
+  # class for reported classification metrics is "long".
+  positive_label: "long"
+
+evaluation:
+  n_repeats: 10          # paper: 10 repeated random splits, report the mean
+  test_size: 0.20        # 80/20 split
+
+compute:
+  # Parallel workers for the repeated-split / stepwise loops. -1 = all available
+  # cores (joblib detects the count at runtime, so the SAME value is optimal on a
+  # 12-core laptop or a 24-core desktop -- no code change needed). Each model runs
+  # single-threaded inside a worker to avoid oversubscription. Results are
+  # unchanged (RF/SVM/linear are invariant; XGBoost runs single-threaded, which is
+  # its deterministic mode). Set to 1 to force fully serial execution.
+  n_jobs: -1
+
+# Model hyperparameters are the library DEFAULTS except the two counts the R code
+# set explicitly (RF ntree=1000, XGBoost nrounds=3000). No grids, no tuning.
+models:
+  rf_n_estimators: 1000
+  xgb_n_estimators: 3000
+
+# `fast` shrinks the two expensive counts for smoke tests ONLY. Never use for
+# reported numbers. Toggle via `--fast` on the run scripts.
+fast:
+  rf_n_estimators: 100
+  xgb_n_estimators: 100
+  n_repeats: 2
+
+output:
+  results_dir: "results"

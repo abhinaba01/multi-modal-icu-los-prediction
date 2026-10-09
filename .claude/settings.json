@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(/data/**)",
+      "Read(./artifacts/**)",
+      "Read(./outputs/**)",
+      "Read(./reports/**)",
+      "Read(./checkpoints/**)",
+      "Read(./mlruns/**)",
+      "Read(./legacy_los/results/**)",
+      "Read(./legacy_los/data/**)",
+      "Read(./**/*.parquet)",
+      "Read(./**/*.npz)",
+      "Read(./**/*.npy)",
+      "Read(./**/*.pt)",
+      "Read(./**/*.pth)",
+      "Read(./**/*.ckpt)",
+      "Read(./**/*.safetensors)",
+      "Read(./**/*.csv)",
+      "Read(./**/*.gz)",
+      "Read(./**/*.zip)"
+    ]
+  }
+}

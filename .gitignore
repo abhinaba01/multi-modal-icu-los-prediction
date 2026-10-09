@@ -1,0 +1,33 @@
+# secrets and environments
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# credentialed or derived data — never in git
+data/
+# narrow exceptions: these two folders named "data" hold code, not data
+!src/fate_icu/data/
+!legacy_los/src/data/
+# tables written by the legacy run scripts
+legacy_los/results/
+artifacts/
+outputs/
+reports/
+checkpoints/
+mlruns/
+*.parquet
+*.npz
+*.npy
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.gz
+*.zip
+
+# raw tables: ignored everywhere except synthetic test fixtures
+*.csv
+!tests/fixtures/**
