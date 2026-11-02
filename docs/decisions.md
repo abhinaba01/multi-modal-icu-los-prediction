@@ -167,3 +167,124 @@ reported on predicted-short test stays. `predict()` returns its LOS for every st
 for stays predicted long, that value is an extrapolation.
 **Alternatives.** A second regressor for predicted-long stays.
 **Reason.** Faithful to the internship's two-stage design (Hempel Tables 5–6).
+
+## D-016 · 2026-11-02 · Stage 2 variables and item mappings
+
+**Decision.** 30 channels in `configs/variables.yaml`:
+- **18 reuse the internship's itemids exactly** (checked against the legacy constants by
+  `tests/test_variables.py`).
+- **mimic-code mappings for the rest:** systolic and diastolic BP (the `vitalsign` concept's
+  items), PaCO2, pH and lactate (the `bg` concept's items), and the derived
+  norepinephrine-equivalent and SOFA concepts.
+- Temperature uses the °F item only and respiratory rate 220210 only, as the internship
+  did. The blood-gas duplicates of chemistry labs (50809, 50811, 50822, 50824) are not used.
+
+**Alternatives.** mimic-code's derived `vitalsign` and `chemistry` tables; adding the °C
+temperature and total respiratory rate items.
+**Reason.** Stage 2 asks to reuse the internship's mappings. The derived vital-sign and lab
+tables drop `storetime`, so the availability rule could not be applied to them.
+
+## D-017 · 2026-11-02 · Window, hourly bins and the availability rule
+
+**Decision.**
+- **Window:** values with intime < time ≤ t0, as in the internship's 24 h means (user
+  decision). Nothing from before ICU admission is used.
+- **Bins:** hour h holds (intime + h, intime + h + 1].
+- **Availability:** a raw-table row needs a `storetime`, and it must be ≤ t0. Rows without a
+  `storetime` are dropped.
+- **Labs** are matched on `subject_id` and time, as Stage 2 specifies. On the demo this
+  selects the same rows as the internship's `hadm_id` join.
+- **Derived tables have no `storetime`:** SOFA rows are kept when `endtime` ≤ t0, and
+  vasopressor intervals are clipped at t0. Their availability cannot be checked, which is a
+  documented limitation.
+
+**Alternatives.** Include values exactly at intime; a 6 h lookback before ICU admission;
+keep rows without a `storetime`.
+**Reason.** You chose the internship's window. Rows whose availability at t0 cannot be shown
+are excluded.
+
+Demo smoke build, rows dropped as stored after t0:
+
+| Table | Dropped | Share |
+|---|---|---|
+| chartevents | 534 of 18,460 | 2.9 % |
+| labevents | 41 of 2,364 | 1.7 % |
+| outputevents | 38 of 1,346 | 2.8 % |
+
+As a result, heart-rate window means differ from the internship's feature for 55 % of
+stays, but only by a median of 0.29 bpm (r = 0.9996).
+
+## D-018 · 2026-11-02 · GCS follows the internship
+
+**Decision.** The GCS total is eye + verbal + motor charted at the same time (all three
+required), taking the hourly minimum. The verbal score "No Response-ETT" (intubated) counts
+as 1.
+**Alternatives.** mimic-code's convention, which scores 15 when the verbal response cannot be
+tested and matches the official SOFA CNS score; treating GCS as unmeasured, with an
+intubation indicator channel.
+**Reason.** User decision, 2026-11-02. Consequence: for intubated patients the GCS channel is
+low while the official SOFA CNS channel is 0. In the demo, 41 % of verbal assessments are
+ETT. Explanations in Stages 4 and 6 must not read a low GCS in an intubated patient as coma.
+
+## D-019 · 2026-11-02 · Plausibility limits before hourly aggregation
+
+**Decision.**
+- Each raw value outside its `valid` limits is dropped: mimic-code's `vitalsign` limits for
+  vital signs, generous physiological limits for labs.
+- FiO2 values of 1 or less are converted to percent first.
+- Clipping to the train percentiles still follows.
+
+**Alternatives.** Clipping only.
+**Reason.** Impossible values (in the demo, MAP of −23 and 801, heart rate 0) would distort
+hourly means. Clipping moves such a value to the edge of the range instead of removing it.
+The demo build dropped 13 chart values.
+
+## D-020 · 2026-11-02 · Urine output subtracts GU irrigant volume in
+
+**Decision.** The internship's 12 urine itemids are used, with 227488 (GU irrigant volume in)
+negated, as in mimic-code's `urine_output` concept. A negative hourly net is set to 0.
+**Alternatives.** The internship's handling (adding it); mimic-code's derived
+`urine_output`, which has no `storetime`.
+**Reason.** Irrigant that goes in is not urine, so the internship overstates urine for
+irrigated patients (`docs/contract.md` §7, item 6). The floor keeps log1p defined.
+
+## D-021 · 2026-11-02 · Vasopressor channel: zero when no infusion runs
+
+**Decision.**
+- The value for each hour is the highest norepinephrine-equivalent dose of any interval
+  overlapping it, with intervals clipped at t0, then log1p.
+- With no infusion running, the value is 0 with mask 0.
+- This channel is never forward-filled and never median-imputed.
+
+**Alternatives.** The general forward-fill-then-median rule.
+**Reason.** The infusion record is complete, so "no interval" means no vasopressor. Filling
+it forward or with the train median would invent treatment.
+
+## D-022 · 2026-11-02 · SOFA channels are mimic-code's per-hour component scores
+
+**Decision.** The per-hour `respiration`, `coagulation`, `liver`, `cardiovascular`, `cns` and
+`renal` columns of `mimiciv_derived.sofa` are used, not the rolling `*_24hours` columns.
+NULL means unobserved.
+**Alternatives.** The rolling 24 h worst scores, which are never NULL.
+**Reason.** A rolling 24 h maximum spreads one event over a whole day, which would distort
+the variable × 4-hour attribution in Stage 4. The per-hour scores are sparse (demo:
+cardiovascular 93 %, respiratory 5 % of stay-hours) and are forward-filled like the other
+channels.
+
+## D-023 · 2026-11-02 · Order of the normalisation steps
+
+**Decision.**
+1. Apply log1p where set.
+2. Clip to the train 0.5th–99.5th percentiles.
+3. Forward-fill within the stay (median channels only).
+4. Fill remaining gaps with the train median, with mask 0.
+5. Standardise with the train mean and SD of the observed, clipped cells. For the
+   vasopressor channel, use all train cells.
+
+`delta` is capped at 24 h. A `raw` array in original units is saved as well, for Stage 4's
+"rose from … to …" text. The full config stops if a channel has no train value or is
+constant (CLAUDE.md A4); the smoke config only warns.
+
+**Alternatives.** Imputing before clipping; statistics over filled cells.
+**Reason.** This follows the Stage 2 spec with train-only statistics (A4). The deterministic
+packet strings need the original units.

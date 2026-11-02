@@ -213,6 +213,15 @@ that is not what the code does. Deviations from standard SOFA and from mimic-cod
    nothing was charted, so "not measured" and "zero" look the same.
 5. **Windowed renal score** uses creatinine only. Gaps between 6-hour windows are carried
    forward; leading gaps are 0.
+6. **Urine output adds irrigation fluid** (found in Stage 2). Item 227488 (GU irrigant volume
+   in) is summed as urine, but mimic-code subtracts it. `urine_24h` and the renal score
+   therefore overstate urine for irrigated patients; the demo has 32 such rows. Stage 2
+   subtracts it (D-020).
+7. **GCS for intubated patients** (found in Stage 2). The verbal score "No Response-ETT" is
+   stored with value 1 and summed as such, so intubated patients get low GCS totals. In the
+   demo, 41 % of verbal assessments are ETT. This affects the `gcs_verbal` mean feature and
+   the neurological SOFA score; mimic-code scores these patients as 15 instead. You kept the
+   internship convention, in Stage 2 as well (D-018).
 
 ## 8. Splits
 

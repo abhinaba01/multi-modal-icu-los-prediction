@@ -11,7 +11,11 @@ from __future__ import annotations
 import pytest
 
 from fate_icu.data.contract import load_contract
+from fate_icu.data.splits import fate_splits
 from fate_icu.data.synthetic import generate_synthetic_mimic
+from fate_icu.data.timeseries.build import build
+from fate_icu.data.timeseries.sources import FrameEventSource
+from fate_icu.data.timeseries.variables import load_variables
 from fate_icu.tabular.api import load_tables
 from fate_icu.tabular.loaders import FrameLoader
 from fate_icu.utils.device import cuda_available
@@ -63,4 +67,23 @@ def synth_tables(synth, synth_dir, contract):
     """Contract cohort, features and provenance built from the synthetic tables."""
     return load_tables(
         loader=FrameLoader(synth.tables), contract=contract, gem_path=synth.gem_path(synth_dir), cache=False
+    )
+
+
+@pytest.fixture(scope="session")
+def variables():
+    return load_variables()
+
+
+@pytest.fixture(scope="session")
+def synth_split(synth_tables, contract):
+    return fate_splits(synth_tables.cohort.sort_index(), contract)
+
+
+@pytest.fixture(scope="session")
+def ts_build(synth, synth_tables, synth_split, contract, variables):
+    """Stage 2 tensors built from the synthetic tables (every channel must carry signal)."""
+    source = FrameEventSource(synth.tables, contract.window.hours)
+    return build(
+        source, synth_tables.cohort, synth_split, variables, contract.window.hours, require_signal=True
     )

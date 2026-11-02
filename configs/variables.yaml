@@ -1,0 +1,441 @@
+# FaTE-ICU hourly time-series variables (Stage 2). One entry per tensor channel, in
+# channel order. Loaded by fate_icu.data.timeseries.variables.load_variables().
+#
+# Fields
+#   source       chartevents | labevents | outputevents (raw tables, have storetime)
+#                norepinephrine_equivalent_dose | sofa  (mimic-code derived concepts)
+#   itemids      raw itemids feeding the channel (raw tables only)
+#   column       component column of mimiciv_derived.sofa
+#   mapping      internship  = itemids reused from legacy_los (checked by tests/test_variables.py)
+#                mimic-code  = itemids or concept from MIT-LCP/mimic-code (no internship equivalent)
+#   valid        plausibility limits applied to each raw value before hourly aggregation
+#                (gt/ge/lt/le); values outside are dropped, not clipped
+#   hourly       how several values in one hour are combined
+#   transform    applied before clipping and standardising (log1p for skewed variables)
+#   impute       median: forward fill, then the train median | zero: 0 when absent, no fill
+#   synonyms     used later (Stage 7) to find mentions in generated text; unique across channels
+#
+# Window: values with intime < time <= t0 (= intime + W), as the internship's 24 h means;
+# hourly bins (intime + h, intime + h + 1], h = 0..W-1. Raw-table rows also need
+# storetime <= t0 (docs/decisions.md D-016, D-017).
+
+version: 1
+window_rule: "intime < time <= t0; hourly bins (intime + h, intime + h + 1]; raw rows need storetime <= t0"
+
+variables:
+  # --- vital signs (mimiciv_icu.chartevents) ---------------------------------------
+  - name: heart_rate
+    label: heart rate
+    group: vitals
+    unit: beats/min
+    source: chartevents
+    itemids: [220045]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, lt: 300}
+    reference_range: {low: 60, high: 100, text: "60-100 beats/min"}
+    synonyms: [heart rate, HR, pulse, pulse rate, tachycardia, bradycardia]
+    mapping: internship
+
+  - name: sbp
+    label: systolic blood pressure
+    group: vitals
+    unit: mmHg
+    source: chartevents
+    itemids: [220050, 220179, 225309]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, lt: 400}
+    reference_range: {low: 90, high: 140, text: "90-140 mmHg"}
+    synonyms: [systolic blood pressure, systolic BP, SBP, systolic pressure]
+    mapping: mimic-code
+    note: "arterial, non-invasive and ART BP systolic items, as mimic-code's vitalsign concept"
+
+  - name: dbp
+    label: diastolic blood pressure
+    group: vitals
+    unit: mmHg
+    source: chartevents
+    itemids: [220051, 220180, 225310]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, lt: 300}
+    reference_range: {low: 60, high: 90, text: "60-90 mmHg"}
+    synonyms: [diastolic blood pressure, diastolic BP, DBP, diastolic pressure]
+    mapping: mimic-code
+    note: "arterial, non-invasive and ART BP diastolic items, as mimic-code's vitalsign concept"
+
+  - name: mbp
+    label: mean arterial pressure
+    group: vitals
+    unit: mmHg
+    source: chartevents
+    itemids: [220052, 220181, 225312]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, lt: 300}
+    reference_range: {low: 70, high: 100, text: "70-100 mmHg"}
+    synonyms: [mean arterial pressure, MAP, mean blood pressure, mean BP, hypotension]
+    mapping: internship
+    note: "the internship's SOFA MAP items"
+
+  - name: resp_rate
+    label: respiratory rate
+    group: vitals
+    unit: breaths/min
+    source: chartevents
+    itemids: [220210]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, lt: 70}
+    reference_range: {low: 12, high: 20, text: "12-20 breaths/min"}
+    synonyms: [respiratory rate, RR, breathing rate, tachypnoea, tachypnea, bradypnoea]
+    mapping: internship
+
+  - name: spo2
+    label: oxygen saturation (SpO2)
+    group: vitals
+    unit: "%"
+    source: chartevents
+    itemids: [220277]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, le: 100}
+    reference_range: {low: 95, high: 100, text: "95-100 %"}
+    synonyms: [oxygen saturation, SpO2, O2 saturation, pulse oximetry, desaturation]
+    mapping: internship
+
+  - name: temperature
+    label: body temperature
+    group: vitals
+    unit: degrees F
+    source: chartevents
+    itemids: [223761]
+    hourly: mean
+    transform: none
+    valid: {gt: 70, lt: 120}
+    reference_range: {low: 97.0, high: 99.5, text: "97.0-99.5 degrees F"}
+    synonyms: [body temperature, temperature, fever, pyrexia, febrile, hypothermia]
+    mapping: internship
+    note: "Fahrenheit item only, as the internship; the Celsius item 223762 is not used"
+
+  - name: gcs
+    label: Glasgow Coma Scale total
+    group: vitals
+    unit: points (3-15)
+    source: chartevents
+    itemids: [220739, 223900, 223901]
+    combine: sum_cocharted
+    hourly: min
+    transform: none
+    valid: {ge: 3, le: 15}
+    reference_range: {low: 15, high: 15, text: "15 (fully alert)"}
+    synonyms: [Glasgow Coma Scale, GCS, level of consciousness, consciousness, coma, neurological status]
+    mapping: internship
+    note: >-
+      eye + verbal + motor charted at the same time, as the internship's SOFA GCS; the
+      verbal score 'No Response-ETT' (intubated) counts as 1, as in the internship
+      (user decision 2026-11-02)
+
+  # --- respiratory -------------------------------------------------------------------
+  - name: fio2
+    label: inspired oxygen fraction (FiO2)
+    group: respiratory
+    unit: "%"
+    source: chartevents
+    itemids: [223835]
+    fraction_to_percent: true
+    hourly: max
+    transform: none
+    valid: {ge: 21, le: 100}
+    reference_range: {low: 21, high: 21, text: "21 % (room air)"}
+    synonyms: [FiO2, inspired oxygen fraction, fraction of inspired oxygen, oxygen requirement, supplemental oxygen]
+    mapping: internship
+    note: "values of 1 or less are fractions and are converted to percent before the limits"
+
+  - name: pao2
+    label: arterial oxygen tension (PaO2)
+    group: respiratory
+    unit: mmHg
+    source: labevents
+    itemids: [50821]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, le: 800}
+    reference_range: {low: 80, high: 100, text: "80-100 mmHg"}
+    synonyms: [PaO2, arterial oxygen, partial pressure of oxygen, hypoxaemia, hypoxemia]
+    mapping: internship
+
+  - name: paco2
+    label: arterial carbon dioxide tension (PaCO2)
+    group: respiratory
+    unit: mmHg
+    source: labevents
+    itemids: [50818]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, le: 200}
+    reference_range: {low: 35, high: 45, text: "35-45 mmHg"}
+    synonyms: [PaCO2, pCO2, carbon dioxide, hypercapnia, hypercarbia, hypocapnia]
+    mapping: mimic-code
+    note: "blood-gas item of mimic-code's bg concept"
+
+  - name: ph
+    label: blood pH
+    group: respiratory
+    unit: pH units
+    source: labevents
+    itemids: [50820]
+    hourly: mean
+    transform: none
+    valid: {ge: 6.5, le: 8.0}
+    reference_range: {low: 7.35, high: 7.45, text: "7.35-7.45"}
+    synonyms: [pH, arterial pH, acidosis, alkalosis, acidaemia, acidemia]
+    mapping: mimic-code
+    note: "blood-gas item of mimic-code's bg concept"
+
+  # --- laboratory results (mimiciv_hosp.labevents, matched on subject_id and time) --
+  - name: creatinine
+    label: serum creatinine
+    group: labs
+    unit: mg/dL
+    source: labevents
+    itemids: [50912]
+    hourly: mean
+    transform: log1p
+    valid: {gt: 0, le: 150}
+    reference_range: {low: 0.6, high: 1.2, text: "0.6-1.2 mg/dL"}
+    synonyms: [creatinine, serum creatinine, SCr, kidney function, renal function, acute kidney injury, AKI]
+    mapping: internship
+
+  - name: bun
+    label: blood urea nitrogen
+    group: labs
+    unit: mg/dL
+    source: labevents
+    itemids: [51006]
+    hourly: mean
+    transform: log1p
+    valid: {gt: 0, le: 300}
+    reference_range: {low: 7, high: 20, text: "7-20 mg/dL"}
+    synonyms: [blood urea nitrogen, BUN, urea, uraemia, uremia, azotaemia]
+    mapping: internship
+
+  - name: bilirubin
+    label: total bilirubin
+    group: labs
+    unit: mg/dL
+    source: labevents
+    itemids: [50885]
+    hourly: mean
+    transform: log1p
+    valid: {gt: 0, le: 150}
+    reference_range: {low: 0.1, high: 1.2, text: "0.1-1.2 mg/dL"}
+    synonyms: [bilirubin, total bilirubin, hyperbilirubinaemia, hyperbilirubinemia, jaundice]
+    mapping: internship
+
+  - name: platelets
+    label: platelet count
+    group: labs
+    unit: K/uL
+    source: labevents
+    itemids: [51265]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, le: 10000}
+    reference_range: {low: 150, high: 400, text: "150-400 K/uL"}
+    synonyms: [platelets, platelet count, thrombocytopenia, thrombocytopaenia]
+    mapping: internship
+
+  - name: wbc
+    label: white blood cell count
+    group: labs
+    unit: K/uL
+    source: labevents
+    itemids: [51301]
+    hourly: mean
+    transform: log1p
+    valid: {gt: 0, le: 1000}
+    reference_range: {low: 4.0, high: 11.0, text: "4.0-11.0 K/uL"}
+    synonyms: [white blood cell count, white cell count, WBC, leukocytes, leukocytosis, leucocytosis, leukopenia]
+    mapping: internship
+
+  - name: lactate
+    label: lactate
+    group: labs
+    unit: mmol/L
+    source: labevents
+    itemids: [50813]
+    hourly: mean
+    transform: log1p
+    valid: {gt: 0, le: 50}
+    reference_range: {low: 0.5, high: 2.0, text: "0.5-2.0 mmol/L"}
+    synonyms: [lactate, lactic acid, hyperlactataemia, hyperlactatemia, lactic acidosis]
+    mapping: mimic-code
+    note: "blood-gas item of mimic-code's bg concept"
+
+  - name: glucose
+    label: blood glucose
+    group: labs
+    unit: mg/dL
+    source: labevents
+    itemids: [50931]
+    hourly: mean
+    transform: log1p
+    valid: {gt: 0, le: 3000}
+    reference_range: {low: 70, high: 140, text: "70-140 mg/dL"}
+    synonyms: [glucose, blood glucose, blood sugar, hyperglycaemia, hyperglycemia, hypoglycaemia, hypoglycemia]
+    mapping: internship
+
+  - name: sodium
+    label: serum sodium
+    group: labs
+    unit: mEq/L
+    source: labevents
+    itemids: [50983]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, le: 250}
+    reference_range: {low: 135, high: 145, text: "135-145 mEq/L"}
+    synonyms: [sodium, serum sodium, hyponatraemia, hyponatremia, hypernatraemia, hypernatremia]
+    mapping: internship
+
+  - name: potassium
+    label: serum potassium
+    group: labs
+    unit: mEq/L
+    source: labevents
+    itemids: [50971]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, le: 30}
+    reference_range: {low: 3.5, high: 5.0, text: "3.5-5.0 mEq/L"}
+    synonyms: [potassium, serum potassium, hyperkalaemia, hyperkalemia, hypokalaemia, hypokalemia]
+    mapping: internship
+
+  - name: haemoglobin
+    label: haemoglobin
+    group: labs
+    unit: g/dL
+    source: labevents
+    itemids: [51222]
+    hourly: mean
+    transform: none
+    valid: {gt: 0, le: 50}
+    reference_range: {low: 12.0, high: 17.5, text: "12.0-17.5 g/dL"}
+    synonyms: [haemoglobin, hemoglobin, Hb, Hgb, anaemia, anemia]
+    mapping: internship
+
+  # --- urine output and vasopressors -------------------------------------------------
+  - name: urine_output
+    label: urine output
+    group: output
+    unit: mL per hour
+    source: outputevents
+    itemids: [226559, 226560, 226561, 226584, 226563, 226564, 226565, 226567, 226557, 226558, 227488, 227489]
+    negate_itemids: [227488]
+    hourly: sum
+    floor: 0
+    transform: log1p
+    valid: {ge: 0, le: 10000}
+    reference_range: {low: 30, text: "at least 30 mL per hour"}
+    synonyms: [urine output, urine, diuresis, oliguria, anuria]
+    mapping: internship
+    note: >-
+      the internship's urine itemids; 227488 (GU irrigant volume in) is subtracted, as in
+      mimic-code's urine_output concept (the internship added it); a negative hourly net is 0
+
+  - name: ne_dose
+    label: vasopressor dose (norepinephrine equivalent)
+    group: medication
+    unit: mcg/kg/min
+    source: norepinephrine_equivalent_dose
+    hourly: max
+    transform: log1p
+    impute: zero
+    valid: {gt: 0, le: 100}
+    reference_range: {low: 0, high: 0, text: "0 (no vasopressor)"}
+    synonyms: [vasopressor, vasopressors, vasopressor dose, norepinephrine, noradrenaline, vasopressor support]
+    mapping: mimic-code
+    note: >-
+      highest dose of any infusion interval overlapping the hour, intervals clipped at t0;
+      0 with mask 0 when no infusion runs (never forward-filled)
+
+  # --- hourly SOFA components (mimiciv_derived.sofa, rows with intime < endtime <= t0) ---
+  - name: sofa_respiration
+    label: respiratory SOFA sub-score (hourly)
+    group: sofa
+    unit: points (0-4)
+    source: sofa
+    column: respiration
+    hourly: max
+    transform: none
+    valid: {ge: 0, le: 4}
+    reference_range: {low: 0, high: 0, text: "0 (no dysfunction)"}
+    synonyms: [respiratory SOFA, respiratory failure, respiratory dysfunction]
+    mapping: mimic-code
+
+  - name: sofa_coagulation
+    label: coagulation SOFA sub-score (hourly)
+    group: sofa
+    unit: points (0-4)
+    source: sofa
+    column: coagulation
+    hourly: max
+    transform: none
+    valid: {ge: 0, le: 4}
+    reference_range: {low: 0, high: 0, text: "0 (no dysfunction)"}
+    synonyms: [coagulation SOFA, coagulopathy, coagulation dysfunction]
+    mapping: mimic-code
+
+  - name: sofa_liver
+    label: liver SOFA sub-score (hourly)
+    group: sofa
+    unit: points (0-4)
+    source: sofa
+    column: liver
+    hourly: max
+    transform: none
+    valid: {ge: 0, le: 4}
+    reference_range: {low: 0, high: 0, text: "0 (no dysfunction)"}
+    synonyms: [liver SOFA, hepatic SOFA, liver dysfunction, hepatic dysfunction]
+    mapping: mimic-code
+
+  - name: sofa_cardiovascular
+    label: cardiovascular SOFA sub-score (hourly)
+    group: sofa
+    unit: points (0-4)
+    source: sofa
+    column: cardiovascular
+    hourly: max
+    transform: none
+    valid: {ge: 0, le: 4}
+    reference_range: {low: 0, high: 0, text: "0 (no dysfunction)"}
+    synonyms: [cardiovascular SOFA, circulatory failure, shock, cardiovascular dysfunction]
+    mapping: mimic-code
+
+  - name: sofa_cns
+    label: neurological (CNS) SOFA sub-score (hourly)
+    group: sofa
+    unit: points (0-4)
+    source: sofa
+    column: cns
+    hourly: max
+    transform: none
+    valid: {ge: 0, le: 4}
+    reference_range: {low: 0, high: 0, text: "0 (no dysfunction)"}
+    synonyms: [CNS SOFA, neurological SOFA, neurological dysfunction]
+    mapping: mimic-code
+
+  - name: sofa_renal
+    label: renal SOFA sub-score (hourly)
+    group: sofa
+    unit: points (0-4)
+    source: sofa
+    column: renal
+    hourly: max
+    transform: none
+    valid: {ge: 0, le: 4}
+    reference_range: {low: 0, high: 0, text: "0 (no dysfunction)"}
+    synonyms: [renal SOFA, renal failure, renal dysfunction, kidney failure]
+    mapping: mimic-code

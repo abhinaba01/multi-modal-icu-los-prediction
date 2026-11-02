@@ -4,6 +4,9 @@ The legacy extraction does not report what it read, so the adapter records the l
 event time each stay's features used (``provenance``). These tests assert it is never
 after t0, check the planted boundary and sentinel events, and show that adding extreme
 events after every t0 changes no feature at all.
+
+Stage 2 tensors get the same treatment, with the stricter availability rule: a value
+inside the window but stored after t0, or with no storetime, must not reach a tensor.
 """
 
 from __future__ import annotations
@@ -19,7 +22,10 @@ from fate_icu.data.synthetic import (
     SPO2,
     URINE_FOLEY,
     add_post_t0_sentinels,
+    add_stage2_perturbations,
 )
+from fate_icu.data.timeseries.build import build
+from fate_icu.data.timeseries.sources import FrameEventSource
 from fate_icu.tabular.api import PROVENANCE_SOURCES, load_tables
 from fate_icu.tabular.loaders import FrameLoader
 
@@ -101,3 +107,48 @@ def test_model_inputs_are_all_available_at_t0(contract):
         for n in contract.feature_names("fate_static")
     )
     assert np.isfinite(hours)
+
+
+# --- Stage 2 time-series tensors ---------------------------------------------------------
+
+
+def test_timeseries_provenance_never_after_t0(ts_build, synth_tables):
+    t0 = synth_tables.cohort["t0"]
+    prov = ts_build.extraction.provenance
+    expected = {
+        "chartevents_time",
+        "chartevents_storetime",
+        "labevents_time",
+        "labevents_storetime",
+        "outputevents_time",
+        "outputevents_storetime",
+        "sofa_time",
+        "norepinephrine_equivalent_dose_time",
+    }
+    assert set(prov.columns) == expected
+    for column in prov.columns:
+        used = prov[column].dropna()
+        assert not used.empty, column
+        assert (used <= t0.loc[used.index]).all(), column
+
+
+def test_timeseries_ignore_late_unstored_and_future_rows(
+    synth, ts_build, synth_tables, synth_split, contract, variables
+):
+    hours = contract.window.hours
+    perturbed = build(
+        FrameEventSource(add_stage2_perturbations(synth), hours),
+        synth_tables.cohort,
+        synth_split,
+        variables,
+        hours,
+        require_signal=True,
+    )
+    assert perturbed.sha256 == ts_build.sha256
+    assert np.array_equal(perturbed.raw, ts_build.raw, equal_nan=True)
+    counts = perturbed.extraction.counts
+    assert (
+        counts["chartevents"]["dropped_stored_after_t0"]
+        > ts_build.extraction.counts["chartevents"]["dropped_stored_after_t0"]
+    )
+    assert counts["labevents"]["dropped_no_storetime"] > 0

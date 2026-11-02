@@ -1,0 +1,13 @@
+# Stage 2 smoke build: laptop CPU, open MIMIC-IV demo in PostgreSQL (mimiciv_demo). Seconds.
+# Never use these numbers in results: smoke configs only prove the code runs.
+run_name: timeseries_smoke
+source: postgres
+variables: configs/variables.yaml
+clip_quantiles: [0.005, 0.995]
+delta_cap_hours: 24
+require_signal: false     # the 56-stay demo train split can leave a sparse channel empty or constant
+batch_size: 5000
+cache_static: true        # reuse the Stage 0 cohort cache under artifacts/
+strict_sofa: true
+compare_legacy: true
+seed: 666

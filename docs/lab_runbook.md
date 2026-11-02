@@ -122,3 +122,48 @@ uv run python -m fate_icu.tabular.audit_leakage --config configs/tabular/full.ya
 3. The console summaries of the three `run_*` scripts, `run_ablation.py`, and the
    `run_meta` table of each run (`legacy_los/results/<name>/tables/run_meta.csv`).
 4. The JSON printed by `crosscheck`, `freeze_threshold`, `run` and `audit_leakage`.
+
+---
+
+## Stage 2: hourly time-series tensors
+
+### Prerequisites
+
+- Stage 0 step 0.1 is done. The database must have the derived concepts, including
+  `mimiciv_derived.sofa` and `mimiciv_derived.norepinephrine_equivalent_dose`.
+- The contract cohort is cached under `artifacts/tabular/` by Stage 0 steps 0.2 or 0.6. If it
+  is not, the first build creates the cache, which adds about 1–2 h.
+
+### Build (about 30–60 min)
+
+```
+uv run python -m fate_icu.data.timeseries.build --config configs/timeseries/full.yaml
+```
+
+Runtime breakdown:
+- SQL extraction: 11 batches of 5,000 stays against chartevents, labevents, outputevents and
+  the two derived tables. This is most of the time.
+- Grid and tensors: a few minutes.
+
+Output: `artifacts/timeseries/<run_id>/`, about 55,000 × 24 × 30 per array, a few hundred MB
+compressed. Note the `run_id` for Stage 3.
+
+The build stops, rather than writing tensors, in two cases:
+- an input dated after t0 is found;
+- a channel has no train value or is constant.
+
+If that happens, paste the message.
+
+### Paste back
+
+The printed JSON:
+- the run id and shape;
+- rows by source (seen, dropped by each rule, accepted). For `sofa`, "accepted" counts
+  component scores, not rows;
+- implausible values dropped per channel;
+- missingness per channel;
+- `normaliser_warnings` (expected: empty);
+- `tensor_sha256`;
+- the comparison with the internship features.
+
+All of it is aggregates, with counts below 10 suppressed.

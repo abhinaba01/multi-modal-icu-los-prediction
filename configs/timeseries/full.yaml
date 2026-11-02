@@ -1,0 +1,12 @@
+# Stage 2 full build: lab machine, full MIMIC-IV v3.1 in PostgreSQL.
+run_name: timeseries_full
+source: postgres
+variables: configs/variables.yaml
+clip_quantiles: [0.005, 0.995]
+delta_cap_hours: 24
+require_signal: true      # fail loudly if a channel is empty or constant in train (CLAUDE.md A4)
+batch_size: 5000          # stays per query; bounds memory
+cache_static: true
+strict_sofa: true
+compare_legacy: true
+seed: 666

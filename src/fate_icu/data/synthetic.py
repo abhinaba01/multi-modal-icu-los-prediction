@@ -8,6 +8,12 @@ Planted cases (``SyntheticMimic.roles``) have known answers under the contract's
 rules, e.g. a readmission within 48 h, a death in the ICU, LOS of exactly 1 and 21 days,
 and one ``leakage`` stay with events exactly at intime and t0 and sentinel values after
 t0.
+
+Stage 2 adds rows from a separate random stream (so the Stage 0 rows stay identical):
+blood pressure, PaCO2, pH and lactate items, the derived norepinephrine-equivalent and
+clock-aligned SOFA tables, and planted time-series cases on one ordinary stay
+(``roles["stage2_planted"]``): values stored after t0 or without a storetime, implausible
+values, a FiO2 fraction and GU irrigant volumes.
 """
 
 from __future__ import annotations
@@ -151,6 +157,7 @@ SCHEMAS: dict[str, list[str]] = {
         "renal_24hours",
         "sofa_24hours",
     ],
+    "norepinephrine_equivalent_dose": ["stay_id", "starttime", "endtime", "norepinephrine_equivalent_dose"],
 }
 
 # Folder of each table in the MIMIC-IV file layout.
@@ -164,6 +171,7 @@ TABLE_FOLDER = {
     "inputevents": "icu",
     "outputevents": "icu",
     "sofa": "derived",
+    "norepinephrine_equivalent_dose": "derived",
 }
 
 # chartevents itemid -> (mean, sd, unit); GCS components are drawn separately.
@@ -202,6 +210,53 @@ LAB_NUMERIC = {
 }
 NOREPINEPHRINE, VASOPRESSIN, URINE_FOLEY = 221906, 222315, 226559
 CREATININE, HEART_RATE, SPO2, MAP, BILIRUBIN = 50912, 220045, 220277, 220052, 50885
+
+# --- Stage 2 additions (drawn from a separate random stream) -----------------------------
+NIBP = {220179: (120.0, 15.0), 220180: (65.0, 10.0), 220181: (83.0, 10.0)}  # systolic, diastolic, mean
+ARTERIAL = {220050: (118.0, 15.0), 220051: (62.0, 10.0)}  # systolic, diastolic (MAP 220052 is Stage 0)
+LAB_STAGE2 = {50818: (40.0, 6.0, "mm Hg"), 50820: (7.38, 0.05, "units"), 50813: (1.6, 0.8, "mmol/L")}
+FIO2, GU_IRRIGANT_IN, GU_IRRIGANT_OUT = 223835, 227488, 227489
+# share of hours in which mimic-code scores each per-hour SOFA component (sparse, as in the demo)
+SOFA_OBSERVED = {
+    "respiration": 0.08,
+    "coagulation": 0.1,
+    "liver": 0.05,
+    "cardiovascular": 0.9,
+    "cns": 0.3,
+    "renal": 0.15,
+}
+SOFA_SCORE_P = [0.55, 0.2, 0.12, 0.08, 0.05]
+# plausible but distinctive values for rows that must never reach a tensor
+UNAVAILABLE_VALUES = {
+    220045: 250.0,
+    220050: 250.0,
+    220051: 150.0,
+    220052: 200.0,
+    220179: 250.0,
+    220180: 150.0,
+    220181: 200.0,
+    220210: 60.0,
+    220277: 70.0,
+    223761: 105.0,
+    220739: 1.0,
+    223900: 1.0,
+    223901: 1.0,
+    223835: 100.0,
+    50821: 400.0,
+    50818: 100.0,
+    50820: 7.0,
+    50912: 12.0,
+    51006: 150.0,
+    50885: 30.0,
+    51265: 900.0,
+    51301: 100.0,
+    50813: 20.0,
+    50931: 900.0,
+    50983: 170.0,
+    50971: 8.0,
+    51222: 20.0,
+    226559: 2000.0,
+}
 
 # Public CMS GEM rows for the ICD-9 codes used below (icd9 -> icd10 targets).
 ICD9_GEM = {"5715": ["K740", "K7460", "K7469"], "4019": ["I10"], "0389": ["A419"], "486": ["J189"]}
@@ -374,8 +429,9 @@ class _Builder:
 
     # --- events -----------------------------------------------------------------------
 
-    def chart(self, subject, hadm, stay, intime, hours, itemid, value, unit=""):
+    def chart(self, subject, hadm, stay, intime, hours, itemid, value, unit="", storetime="default"):
         charttime = intime + pd.Timedelta(hours=hours)
+        stored = charttime + pd.Timedelta(minutes=5) if storetime == "default" else storetime
         self.rows["chartevents"].append(
             {
                 "subject_id": subject,
@@ -383,7 +439,7 @@ class _Builder:
                 "stay_id": stay,
                 "caregiver_id": 1001,
                 "charttime": charttime,
-                "storetime": charttime + pd.Timedelta(minutes=5),
+                "storetime": stored,
                 "itemid": itemid,
                 "value": f"{value:g}",
                 "valuenum": float(value),
@@ -392,9 +448,10 @@ class _Builder:
             }
         )
 
-    def lab(self, subject, hadm, intime, hours, itemid, value, store_delay_hours=1.0):
+    def lab(self, subject, hadm, intime, hours, itemid, value, store_delay_hours=1.0, storetime="default"):
         charttime = intime + pd.Timedelta(hours=hours)
-        mean, sd, unit = LAB_NUMERIC[itemid]
+        mean, sd, unit = {**LAB_NUMERIC, **LAB_STAGE2}[itemid]
+        stored = charttime + pd.Timedelta(hours=store_delay_hours) if storetime == "default" else storetime
         self.rows["labevents"].append(
             {
                 "labevent_id": self.next_labevent,
@@ -404,7 +461,7 @@ class _Builder:
                 "itemid": itemid,
                 "order_provider_id": None,
                 "charttime": charttime,
-                "storetime": charttime + pd.Timedelta(hours=store_delay_hours),
+                "storetime": stored,
                 "value": f"{value:.2f}",
                 "valuenum": round(float(value), 2),
                 "valueuom": unit,
@@ -452,8 +509,9 @@ class _Builder:
         )
         self.next_order += 1
 
-    def output(self, subject, hadm, stay, intime, hours, value):
+    def output(self, subject, hadm, stay, intime, hours, value, itemid=URINE_FOLEY, storetime="default"):
         charttime = intime + pd.Timedelta(hours=hours)
+        stored = charttime + pd.Timedelta(minutes=15) if storetime == "default" else storetime
         self.rows["outputevents"].append(
             {
                 "subject_id": subject,
@@ -461,8 +519,8 @@ class _Builder:
                 "stay_id": stay,
                 "caregiver_id": 1003,
                 "charttime": charttime,
-                "storetime": charttime + pd.Timedelta(minutes=15),
-                "itemid": URINE_FOLEY,
+                "storetime": stored,
+                "itemid": itemid,
                 "value": float(value),
                 "valueuom": "ml",
             }
@@ -639,7 +697,115 @@ def generate_synthetic_mimic(n_patients: int = 60, seed: int = 0) -> SyntheticMi
     b.output(subject, hadm, stay, intime, w + 0.5, 99_999.0)  # after t0
     b.input(subject, hadm, stay, intime, w + 1.0, NOREPINEPHRINE, 9.9)  # after t0
 
+    roles["stage2_planted"] = normal[0]
+    _add_stage2_rows(b, roles, np.random.RandomState(seed + 10_007))
     return SyntheticMimic(tables=b.frames(), roles=roles, normal_stays=normal)
+
+
+def _add_stage2_rows(b: _Builder, roles: dict[str, int], rng: np.random.RandomState) -> None:
+    """Stage 2 rows, appended after every Stage 0 row and drawn from their own stream."""
+    stays = list(b.rows["icustays"])
+    for st in stays:
+        subject, hadm, stay, intime = st["subject_id"], st["hadm_id"], st["stay_id"], st["intime"]
+        horizon = min(st["los"] * 24.0, 30.0)
+        for h in np.arange(0.75, horizon, 1.0):
+            for itemid, (mean, sd) in NIBP.items():
+                b.chart(subject, hadm, stay, intime, float(h), itemid, round(rng.normal(mean, sd), 1), "mmHg")
+        if rng.rand() < 0.4:  # an arterial line
+            for h in np.arange(0.5, horizon, 1.0):
+                for itemid, (mean, sd) in ARTERIAL.items():
+                    value = round(rng.normal(mean, sd), 1)
+                    b.chart(subject, hadm, stay, intime, float(h), itemid, value, "mmHg")
+        for h in (2.0, 10.0, 18.0, 26.0):
+            if h > horizon:
+                continue
+            for itemid, (mean, sd, _unit) in LAB_STAGE2.items():
+                if rng.rand() < 0.7:
+                    b.lab(subject, hadm, intime, h, itemid, max(rng.normal(mean, sd), 0.3))
+
+    # derived tables: vasopressor intervals from the norepinephrine infusions, clock-aligned SOFA
+    b.rows["norepinephrine_equivalent_dose"] = [
+        {
+            "stay_id": r["stay_id"],
+            "starttime": r["starttime"],
+            "endtime": r["endtime"],
+            "norepinephrine_equivalent_dose": r["rate"],
+        }
+        for r in b.rows["inputevents"]
+        if r["itemid"] == NOREPINEPHRINE
+    ]
+    b.rows["sofa"] = []
+    for st in stays:
+        # mimic-code anchors SOFA hours on the first heart-rate hour; the leakage stay's rows
+        # end exactly on intime (excluded) and on t0 (last hour)
+        offset = -1 if st["stay_id"] == roles["leakage"] else int(rng.choice([-1, 0, 0, 1]))
+        anchor = st["intime"].floor("h") + pd.Timedelta(hours=offset)
+        _sofa_rows(b, st["stay_id"], anchor, int(np.ceil(min(st["los"] * 24.0, 30.0))) + 2, rng)
+
+    # planted time-series cases on one ordinary stay
+    st = next(r for r in stays if r["stay_id"] == roles["stage2_planted"])
+    subject, hadm, stay, intime = st["subject_id"], st["hadm_id"], st["stay_id"], st["intime"]
+    t0 = intime + pd.Timedelta(hours=W_HOURS)
+    b.chart(
+        subject, hadm, stay, intime, 12.25, HEART_RATE, 250.0, "bpm", storetime=t0 + pd.Timedelta(hours=3)
+    )
+    b.chart(subject, hadm, stay, intime, 13.25, HEART_RATE, 240.0, "bpm", storetime=None)
+    b.chart(subject, hadm, stay, intime, 8.25, HEART_RATE, 0.0, "bpm")  # implausible
+    b.chart(subject, hadm, stay, intime, 7.25, MAP, 801.0, "mmHg")  # implausible
+    b.chart(subject, hadm, stay, intime, 9.25, FIO2, 0.5, "")  # a fraction: 50 %
+    b.lab(subject, hadm, intime, 20.0, CREATININE, 12.0, storetime=t0 + pd.Timedelta(hours=5))
+    b.output(subject, hadm, stay, intime, 5.25, 500.0, itemid=GU_IRRIGANT_IN)
+    b.output(subject, hadm, stay, intime, 5.4, 700.0, itemid=GU_IRRIGANT_OUT)
+
+    # vasopressor intervals across intime and across t0 on the leakage stay
+    leak = next(r for r in stays if r["stay_id"] == roles["leakage"])
+    for start_h, end_h, dose in ((-2.0, 3.0, 0.15), (22.0, 28.0, 0.2)):
+        b.rows["norepinephrine_equivalent_dose"].append(
+            {
+                "stay_id": leak["stay_id"],
+                "starttime": leak["intime"] + pd.Timedelta(hours=start_h),
+                "endtime": leak["intime"] + pd.Timedelta(hours=end_h),
+                "norepinephrine_equivalent_dose": dose,
+            }
+        )
+
+
+def _sofa_rows(b: _Builder, stay: int, anchor: pd.Timestamp, n_rows: int, rng: np.random.RandomState) -> None:
+    """Hourly SOFA rows ending on clock hours; per-hour components are often unscored."""
+    history: dict[str, list[float]] = {k: [] for k in SOFA_OBSERVED}
+    for hr in range(n_rows):
+        endtime = anchor + pd.Timedelta(hours=hr + 1)
+        scores = {
+            k: (int(rng.choice(5, p=SOFA_SCORE_P)) if rng.rand() < p_obs else None)
+            for k, p_obs in SOFA_OBSERVED.items()
+        }
+        rolling = {}
+        for k, value in scores.items():
+            history[k].append(0.0 if value is None else float(value))
+            rolling[f"{k}_24hours"] = max(history[k][-24:])
+        b.rows["sofa"].append(
+            {
+                "stay_id": stay,
+                "hr": hr,
+                "starttime": endtime - pd.Timedelta(hours=1),
+                "endtime": endtime,
+                "pao2fio2ratio_novent": None,
+                "pao2fio2ratio_vent": None,
+                "rate_epinephrine": None,
+                "rate_norepinephrine": None,
+                "rate_dopamine": None,
+                "rate_dobutamine": None,
+                "meanbp_min": None,
+                "gcs_min": None,
+                "uo_24hr": None,
+                "bilirubin_max": None,
+                "creatinine_max": None,
+                "platelet_min": None,
+                **scores,
+                **rolling,
+                "sofa_24hours": sum(rolling.values()),
+            }
+        )
 
 
 def add_post_t0_sentinels(synth: SyntheticMimic, seed: int = 1) -> dict[str, pd.DataFrame]:
@@ -728,6 +894,132 @@ def add_post_t0_sentinels(synth: SyntheticMimic, seed: int = 1) -> dict[str, pd.
         ("labevents", extra_lab),
         ("inputevents", extra_in),
         ("outputevents", extra_out),
+    ):
+        frame = pd.DataFrame(extra, columns=SCHEMAS[key]).dropna(axis=1, how="all")
+        tables[key] = pd.concat([tables[key], frame], ignore_index=True)[SCHEMAS[key]]
+    return tables
+
+
+STAGE2_CHART_ITEMS = (
+    220045,
+    220050,
+    220051,
+    220052,
+    220179,
+    220180,
+    220181,
+    220210,
+    220277,
+    223761,
+    220739,
+    223900,
+    223901,
+    223835,
+)
+STAGE2_LAB_ITEMS = (50821, 50818, 50820, 50912, 51006, 50885, 51265, 51301, 50813, 50931, 50983, 50971, 51222)
+STAGE2_OUTPUT_ITEMS = (URINE_FOLEY,)
+
+
+def add_stage2_perturbations(synth: SyntheticMimic, seed: int = 2) -> dict[str, pd.DataFrame]:
+    """Copy of the tables plus rows the Stage 2 rules must ignore (tensors must not change).
+
+    For every stay and Stage 2 raw item, with plausible values:
+
+    * a value after t0 (labs after the patient's latest t0, as labs match on subject and time);
+    * a value inside the window but stored after the patient's latest t0;
+    * a value inside the window with no storetime;
+
+    plus vasopressor intervals starting after t0 and SOFA rows ending after t0.
+    """
+    rng = np.random.RandomState(seed)
+    tables = {k: v.copy() for k, v in synth.tables.items()}
+    stays = tables["icustays"].copy()
+    stays["t0"] = stays["intime"] + pd.Timedelta(hours=W_HOURS)
+    last_t0 = stays.groupby("subject_id")["t0"].max()
+
+    def after(t):
+        return t + pd.Timedelta(seconds=int(rng.randint(60, 36_000)))
+
+    def inside(intime):
+        return intime + pd.Timedelta(seconds=int(rng.randint(1_800, (W_HOURS - 1) * 3600)))
+
+    chart, lab, out, ne, sofa = [], [], [], [], []
+    for row in stays.itertuples(index=False):
+        late_store = last_t0[row.subject_id] + pd.Timedelta(hours=1)
+        cases = ((after(row.t0), None), (inside(row.intime), late_store), (inside(row.intime), pd.NaT))
+        for itemid in STAGE2_CHART_ITEMS:
+            for i, (charttime, stored) in enumerate(cases):
+                chart.append(
+                    {
+                        "subject_id": row.subject_id,
+                        "hadm_id": row.hadm_id,
+                        "stay_id": row.stay_id,
+                        "caregiver_id": 9,
+                        "charttime": after(row.t0) if i == 0 else charttime,
+                        "storetime": charttime if i == 0 else stored,
+                        "itemid": itemid,
+                        "value": "x",
+                        "valuenum": UNAVAILABLE_VALUES[itemid],
+                        "valueuom": "",
+                        "warning": 0,
+                    }
+                )
+        for itemid in STAGE2_OUTPUT_ITEMS:
+            for i, (charttime, stored) in enumerate(cases):
+                out.append(
+                    {
+                        "subject_id": row.subject_id,
+                        "hadm_id": row.hadm_id,
+                        "stay_id": row.stay_id,
+                        "caregiver_id": 9,
+                        "charttime": charttime,
+                        "storetime": charttime if i == 0 else stored,
+                        "itemid": itemid,
+                        "value": UNAVAILABLE_VALUES[itemid],
+                        "valueuom": "ml",
+                    }
+                )
+        for itemid in STAGE2_LAB_ITEMS:
+            for i, (charttime, stored) in enumerate(cases):
+                when = after(last_t0[row.subject_id]) if i == 0 else charttime
+                lab.append(
+                    {
+                        **{c: None for c in SCHEMAS["labevents"]},
+                        "subject_id": row.subject_id,
+                        "hadm_id": row.hadm_id,
+                        "itemid": itemid,
+                        "charttime": when,
+                        "storetime": when if i == 0 else stored,
+                        "value": "x",
+                        "valuenum": UNAVAILABLE_VALUES[itemid],
+                    }
+                )
+        ne.append(
+            {
+                "stay_id": row.stay_id,
+                "starttime": after(row.t0),
+                "endtime": row.t0 + pd.Timedelta(hours=12),
+                "norepinephrine_equivalent_dose": 5.0,
+            }
+        )
+        end = row.t0.floor("h") + pd.Timedelta(hours=1)
+        sofa.append(
+            {
+                **{c: None for c in SCHEMAS["sofa"]},
+                "stay_id": row.stay_id,
+                "hr": 999,
+                "starttime": end - pd.Timedelta(hours=1),
+                "endtime": end,
+                **dict.fromkeys(SOFA_OBSERVED, 4),
+            }
+        )
+
+    for key, extra in (
+        ("chartevents", chart),
+        ("labevents", lab),
+        ("outputevents", out),
+        ("norepinephrine_equivalent_dose", ne),
+        ("sofa", sofa),
     ):
         frame = pd.DataFrame(extra, columns=SCHEMAS[key]).dropna(axis=1, how="all")
         tables[key] = pd.concat([tables[key], frame], ignore_index=True)[SCHEMAS[key]]

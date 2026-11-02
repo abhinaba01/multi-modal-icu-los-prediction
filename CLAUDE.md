@@ -110,7 +110,7 @@ multi_modal_icu_los_prediction/
 
 ## A10. Current status
 
-Phase: build (laptop). Stage 0 build done (109 tests pass, demo smoke run works); waiting for the user's review of `docs/contract.md`. Next: Stage 2.
+Phase: build (laptop). Stage 0 build done (the user's contract review is pending). Stage 2 build done: 160 tests pass and the demo smoke build works. Next: Stage 1.
 
 ---
 

@@ -10,12 +10,30 @@ Each finished stage gets a summary of at most 10 lines here.
   legacy ones and the 3 `demo` tests; 2 `realdata` tests are skipped (lab only).
 - **Smoke run:** `fate_icu.tabular.run` and `audit_leakage` run end to end on `mimiciv_demo`
   (140 ICU stays, 86 in the contract cohort).
-- **Waiting for:** your review of `docs/contract.md`.
+- **Stage 2:** built 2026-11-02. 160 tests pass (2 `realdata` skipped); the smoke build runs
+  end to end on `mimiciv_demo`.
+- **Waiting for:** your review of `docs/contract.md` (Stage 0).
 - **Lab, Stage 0** (`docs/lab_runbook.md`): load MIMIC-IV v3.1, run the tests including
   `realdata`, reproduce the internship with the legacy scripts, then freeze the
   long-stay threshold.
 
 ## Stage summaries
+
+### Stage 2: hourly time-series tensors (build done, 2026-11-02)
+
+- **Channels:** `configs/variables.yaml` has 30 (18 with the internship's itemids, plus
+  mimic-code's BP and blood-gas items and the official vasopressor and per-hour SOFA
+  concepts). Each has a label, unit, synonyms and reference range.
+- **Code:** `fate_icu.data.timeseries`: SQL (`sql/timeseries/`) or in-memory sources, then
+  the availability and plausibility rules with provenance, the hourly grid, a train-fitted
+  normaliser, and the `values`, `mask`, `delta` and `raw` arrays.
+- **Rules:** the window is the internship's (intime, t0]; rows need `storetime` ≤ t0; GCS
+  follows the internship (ETT = verbal 1); urine subtracts irrigant volume in; the
+  vasopressor channel is 0 when no infusion runs (D-016 to D-023).
+- **Two more internship findings** in `docs/contract.md` §7: irrigant counted as urine, and
+  intubated patients getting low GCS.
+- **Demo smoke build** (`[86, 24, 30]`, about 10 s): 2.9 % of chart rows were stored after t0;
+  heart-rate means differ from the internship's by a median of 0.29 bpm.
 
 ### Stage 0: repo and contract (build done, 2026-11-02)
 
