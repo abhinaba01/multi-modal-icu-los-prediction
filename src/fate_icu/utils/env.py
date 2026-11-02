@@ -34,6 +34,7 @@ class Settings(BaseModel):
     device: Literal["auto", "cpu", "cuda"] = "auto"
     mimic_demo_dir: Path | None = None
     mimic_raw_dir: Path | None = None
+    mimic_cxr_dir: Path | None = None
     icd9_gem_path: Path | None = None
 
     @property
@@ -72,6 +73,7 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         device=env.get("FATE_DEVICE") or "auto",
         mimic_demo_dir=_resolve(env.get("MIMIC_DEMO_DIR")),
         mimic_raw_dir=_resolve(env.get("MIMIC_RAW_DIR")),
+        mimic_cxr_dir=_resolve(env.get("MIMIC_CXR_DIR")),
         icd9_gem_path=_resolve(env.get("ICD9_GEM_PATH")),
     )
 

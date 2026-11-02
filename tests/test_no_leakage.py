@@ -7,6 +7,7 @@ events after every t0 changes no feature at all.
 
 Stage 2 tensors get the same treatment, with the stricter availability rule: a value
 inside the window but stored after t0, or with no storetime, must not reach a tensor.
+Stage 1: no chest X-ray taken after t0 is ever paired with a stay.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from fate_icu.data.cxr.linkage import link
 from fate_icu.data.synthetic import (
     BILIRUBIN,
     CREATININE,
@@ -152,3 +154,32 @@ def test_timeseries_ignore_late_unstored_and_future_rows(
         > ts_build.extraction.counts["chartevents"]["dropped_stored_after_t0"]
     )
     assert counts["labevents"]["dropped_no_storetime"] > 0
+
+
+# --- Stage 1 chest X-ray pairing --------------------------------------------------------
+
+
+def test_cxr_never_after_t0(cxr_linkage, synth_tables):
+    linked = cxr_linkage.paired[cxr_linkage.paired["has_cxr"]]
+    t0 = synth_tables.cohort["t0"].reindex(linked["stay_id"]).to_numpy()
+    assert len(linked) and (linked["study_datetime"].to_numpy() <= t0).all()
+
+
+def test_cxr_ignores_images_taken_after_t0(cxr_synth, cxr_linkage, synth_tables, contract):
+    later = []
+    for i, (stay, row) in enumerate(synth_tables.cohort.sort_index().iterrows()):
+        when = row["t0"] + pd.Timedelta(minutes=1 + i)
+        for view in ("AP", "PA"):
+            later.append(
+                {
+                    "dicom_id": f"after-t0-{stay}-{view}",
+                    "subject_id": str(row["subject_id"]),
+                    "study_id": str(59_000_000 + i),
+                    "ViewPosition": view,
+                    "StudyDate": when.strftime("%Y%m%d"),
+                    "StudyTime": f"{when.hour * 10000 + when.minute * 100 + when.second}.0",
+                }
+            )
+    perturbed = pd.concat([cxr_synth.metadata, pd.DataFrame(later)], ignore_index=True)
+    again = link(perturbed, synth_tables.cohort, contract.window.hours, 24.0)
+    pd.testing.assert_frame_equal(again.paired, cxr_linkage.paired)

@@ -11,6 +11,8 @@ from __future__ import annotations
 import pytest
 
 from fate_icu.data.contract import load_contract
+from fate_icu.data.cxr.linkage import link
+from fate_icu.data.cxr.synthetic import generate_cxr_metadata
 from fate_icu.data.splits import fate_splits
 from fate_icu.data.synthetic import generate_synthetic_mimic
 from fate_icu.data.timeseries.build import build
@@ -87,3 +89,14 @@ def ts_build(synth, synth_tables, synth_split, contract, variables):
     return build(
         source, synth_tables.cohort, synth_split, variables, contract.window.hours, require_signal=True
     )
+
+
+@pytest.fixture(scope="session")
+def cxr_synth(synth_tables, contract):
+    """Synthetic MIMIC-CXR metadata for the synthetic cohort, with planted answers (24 h lookback)."""
+    return generate_cxr_metadata(synth_tables.cohort, contract.window.hours, 24.0, seed=0)
+
+
+@pytest.fixture(scope="session")
+def cxr_linkage(cxr_synth, synth_tables, contract):
+    return link(cxr_synth.metadata, synth_tables.cohort, contract.window.hours, 24.0)

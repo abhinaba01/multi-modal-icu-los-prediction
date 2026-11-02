@@ -288,3 +288,114 @@ constant (CLAUDE.md A4); the smoke config only warns.
 **Alternatives.** Imputing before clipping; statistics over filled cells.
 **Reason.** This follows the Stage 2 spec with train-only statistics (A4). The deterministic
 packet strings need the original units.
+
+## D-024 · 2026-11-02 · Reading MIMIC-CXR dates and times
+
+**Decision.**
+- The metadata is read with every column as text.
+- `StudyDate` must be 8 digits.
+- For `StudyTime`, the whole-second part is zero-padded to 6 digits, so `1520.0` means
+  00:15:20, and the fraction is kept down to microseconds.
+- Invalid values are excluded and counted.
+- The file is assumed to have 12 columns: `dicom_id`, `subject_id`, `study_id` and the 10
+  documented DICOM fields. The lab run stops if a required column is missing.
+
+**Alternatives.** MedFuse's `int(float(x))`, which drops fractional seconds; reading the
+values as numbers.
+**Reason.** The PhysioNet page documents neither format. Parsing the text keeps leading
+zeros and fractions intact. Dropping fractions would turn images a fraction of a second
+apart into ties (the planted case `fraction_breaks_tie`).
+
+## D-025 · 2026-11-02 · Rules for choosing each stay's X-ray
+
+**Decision.**
+- Frontal views only: exactly AP or PA.
+- Eligible window: intime − 24 h ≤ study time ≤ t0, both ends included; the lookback is
+  configurable.
+- The most recent eligible image wins. Ties go to AP over PA, then the smallest `dicom_id`.
+- Images are matched on `subject_id`. Every stay is kept, with `has_cxr`.
+- One image may serve two stays of the same patient; the report counts these.
+- The contract's patient split is used, not MIMIC-CXR's.
+
+**Alternatives.** AP only (MedFuse); [intime, outtime] or the first 48 h; MIMIC-CXR's
+official split.
+**Reason.**
+- This follows the Stage 1 spec.
+- Bounding at t0 keeps out images taken after the prediction time.
+- The result never depends on row order (tested).
+- LOS is never used, so pairings are real (tested by shuffling LOS).
+
+## D-026 · 2026-11-02 · Comparison with MedFuse's linkage
+
+MedFuse (`github.com/nyuad-cai/MedFuse`, `datasets/fusion.py`) was read, not copied.
+
+| Aspect | MedFuse | FaTE-ICU |
+|---|---|---|
+| Views | AP only | AP or PA; AP preferred on ties |
+| Window | [intime, outtime]; [intime, intime + 48 h] for mortality | [intime − 24 h, t0] |
+| Choice | latest; ties depend on row order | latest; ties AP, then `dicom_id` |
+| StudyTime | `int(float(x))` zero-padded; fractions dropped | fractions kept |
+| Stays without an image | dropped from the paired set | kept, `has_cxr` = false |
+| Split | their own, derived from EHR list files | the contract's patient split |
+
+**Reason.** MedFuse's whole-stay window would let in images taken after t0 for a
+length-of-stay task. Its tie handling is not deterministic. Their `create_split.py` probably
+compares subject IDs as strings against integers; that does not affect us.
+
+## D-027 · 2026-11-02 · X-ray preprocessing and cache
+
+**Decision.**
+1. Read with Pillow to 2-D grayscale. Colour is averaged per pixel, as the torchxrayvision
+   README does; alpha is dropped; the maximum is 255 or 65535 by bit depth; other modes are
+   an error.
+2. `xrv.datasets.normalize`.
+3. `XRayCenterCrop`.
+4. `XRayResizer(224)` as float32 for the model, and `XRayResizer(512)` stored as uint8 for
+   display.
+
+The cache holds one compressed `.npz` per `dicom_id` in `artifacts/cxr_cache/`. It
+resumes, and writes are atomic. Missing or unreadable images are counted, their keys go only
+to a local `problems.txt`, and the command exits with an error.
+
+torchxrayvision is imported inside `warnings.catch_warnings()`. Version 1.5.7 adds a
+global "ignore all warnings" filter when imported (verified, and guarded by a test). The
+output matches the README pipeline on the public images within 0.05 (float rounding).
+
+**Alternatives.** `xrv.utils.load_image` (takes the first channel, not the mean); the cv2
+resize engine; a float16 cache.
+**Reason.** The same conventions as the data the torchxrayvision encoder was trained on, with
+no extra dependencies.
+
+## D-028 · 2026-11-02 · Public test images
+
+**Decision.** Four images in `tests/fixtures/cxr/`, credited in `SOURCES.md`:
+- two NIH ChestX-ray14 PNGs from torchxrayvision's repository (the licence wording could not
+  be verified; included at your request);
+- a CC0 PA PNG from Wikimedia Commons;
+- a CC BY-SA 4.0 bedside AP JPEG from Wikimedia Commons (attribution and share-alike apply
+  to that image).
+
+**Alternatives.** Synthetic images only.
+**Reason.** Stage 1 asks for preprocessing tested on real public X-rays. Synthetic images
+still cover the edge cases: colour, 16-bit, non-square, and corrupt files.
+
+## D-029 · 2026-11-02 · Stage 1 dependencies
+
+**Decision.**
+- torch 2.15.0. From PyPI it is CPU-only on Windows. On Linux the wheel pulls CUDA 13
+  libraries, so the lab's NVIDIA driver must support CUDA 13 (R580 or later; check with
+  `nvidia-smi` before Stage 3).
+- torchvision 0.29.2, torchxrayvision 1.5.7, scikit-image 0.26.0, pillow 13.0.0.
+- Ranges: torch below 3 (A6: PyTorch 2.x); torchxrayvision 1.5.x.
+
+**Alternatives.** Re-implement the preprocessing without torchxrayvision.
+**Reason.** Stage 1 specifies torchxrayvision's normalisation, and Stage 3 needs it for the
+encoder anyway.
+
+## D-030 · 2026-11-02 · A date-alignment check in the flow report
+
+**Decision.** The report gives the share of cohort patients with any dated X-ray who have one
+between intime − lookback and the outtime of one of their ICU stays.
+**Alternatives.** Trust the Stage 1 background.
+**Reason.** The PhysioNet page does not confirm that MIMIC-CXR uses MIMIC-IV's per-patient
+date shift. If it did not, this share would be near zero and the linkage meaningless.

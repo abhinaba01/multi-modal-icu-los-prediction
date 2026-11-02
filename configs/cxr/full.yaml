@@ -1,0 +1,10 @@
+# Stage 1 full run: lab machine, full MIMIC-IV v3.1 cohort + MIMIC-CXR-JPG 2.1.0 metadata
+# from MIMIC_CXR_DIR; the cache step reads the downloaded selected images.
+run_name: cxr_full
+metadata: file                # MIMIC_CXR_DIR/mimic-cxr-2.0.0-metadata.csv.gz
+images: mimic                 # MIMIC_CXR_DIR/files/...
+lookback_hours: 24
+min_paired_train_stays: 2000  # below this, stop and report before Stage 3 (fallback: report text)
+cache_static: true
+strict_sofa: true
+seed: 666

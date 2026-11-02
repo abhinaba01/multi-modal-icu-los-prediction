@@ -1,0 +1,13 @@
+# Stage 1 smoke run: laptop, open MIMIC-IV demo cohort + synthetic MIMIC-CXR metadata
+# (no open X-rays link to the demo patients); the cache step uses the public test images.
+# Never use these numbers in results: smoke configs only prove the code runs.
+run_name: cxr_smoke
+metadata: synthetic           # fake metadata with planted cases, checked against their answers
+images: fixtures              # tests/fixtures/cxr (public, not MIMIC)
+lookback_hours: 24            # eligible: intime - 24 h <= study time <= t0
+synthetic_seed: 0
+fixtures_dir: tests/fixtures/cxr
+min_paired_train_stays: 2000
+cache_static: true            # reuse the Stage 0 cohort cache under artifacts/
+strict_sofa: true
+seed: 666

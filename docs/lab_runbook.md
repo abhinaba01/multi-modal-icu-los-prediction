@@ -167,3 +167,77 @@ The printed JSON:
 - the comparison with the internship features.
 
 All of it is aggregates, with counts below 10 suppressed.
+
+---
+
+## Stage 1: link MIMIC-IV and MIMIC-CXR
+
+### Prerequisites
+
+- Your own credentialed access to **MIMIC-CXR-JPG 2.1.0** on PhysioNet. This needs CITI
+  "Data or Specimens Only Research" training and the PhysioNet Credentialed Health Data
+  Use Agreement 1.5.0, signed for this dataset.
+- Stage 0 done in the lab: the database and the cached contract cohort.
+- Disk space. My rough estimate is about 1.5 MB per selected image, e.g. about 20 GB for
+  15,000 images.
+- `wget`. On Windows use Git Bash, WSL, or `winget install JernejSimoncic.Wget`.
+- In `.env`, set `MIMIC_CXR_DIR=<parent>/mimic-cxr-jpg/2.1.0`. This folder will hold the
+  metadata file and `files/`.
+
+### 1.1 Download the metadata (minutes)
+
+Run this from `<parent>`. `--cut-dirs=1` recreates `mimic-cxr-jpg/2.1.0/...` there.
+
+```
+wget -r -N -c -np -nH --cut-dirs=1 --user <PHYSIONET_USERNAME> --ask-password https://physionet.org/files/mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-metadata.csv.gz
+```
+
+### 1.2 Link (minutes)
+
+```
+uv run python -m fate_icu.data.cxr.link --config configs/cxr/full.yaml
+```
+
+Output goes to `artifacts/cxr/<run_id>/`: `paired_cohort.parquet`, `image_list.txt`
+(the selected images only) and `report.json`. The command stops if a required metadata
+column is missing, or if a selected image is dated after t0.
+
+**Check before going on:**
+- If `below_min_paired_train_stays` is `true` (fewer than 2,000 paired train stays), stop
+  and tell me. Stage 3 should not run; the fallback is report text (Stage 8).
+- If `date_alignment.share_with_an_xray_during_an_icu_stay` is near zero, the X-ray and ICU
+  timelines don't line up. Stop and tell me.
+
+### 1.3 Download only the selected images (hours)
+
+Run from `<parent>` again, giving the full path to the list:
+
+```
+wget -r -N -c -np -nH --cut-dirs=1 --user <PHYSIONET_USERNAME> --ask-password -i <repo>/artifacts/cxr/<run_id>/image_list.txt --base=https://physionet.org/files/mimic-cxr-jpg/2.1.0/
+```
+
+The images land in `MIMIC_CXR_DIR/files/...`. If interrupted, run the same command again:
+`-N -c` skips or resumes what is already there. Never download the full image set.
+
+### 1.4 Build the image cache (about 1 h for 15,000 images, CPU)
+
+```
+uv run python -m fate_icu.data.cxr.cache --config configs/cxr/full.yaml --link-run <run_id>
+```
+
+The cache resumes where it stopped. It exits with an error if an image is missing or
+unreadable; their keys are listed only in `artifacts/cxr_cache_runs/<run>/problems.txt`. If
+that happens, repeat step 1.3, then this step.
+
+### Paste back
+
+1. The JSON printed by `link`, covering:
+   - the flow counts;
+   - the shares linked by split and by anchor year group;
+   - the paired train count and its flag;
+   - `hours_before_t0`;
+   - LOS for paired versus unpaired stays;
+   - the views;
+   - the date alignment;
+   - `images_to_download`.
+2. The JSON printed by `cache`.

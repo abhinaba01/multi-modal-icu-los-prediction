@@ -1,4 +1,6 @@
-# Status
+
+
+ # Status
 
 Build order (laptop): 0 → 2 → 1 → 5 → 3 → 4 → 6 → 7. The stage table is in `docs/stages.md`.
 Each finished stage gets a summary of at most 10 lines here.
@@ -12,12 +14,31 @@ Each finished stage gets a summary of at most 10 lines here.
   (140 ICU stays, 86 in the contract cohort).
 - **Stage 2:** built 2026-11-02. 160 tests pass (2 `realdata` skipped); the smoke build runs
   end to end on `mimiciv_demo`.
+- **Stage 1:** built 2026-11-02. 210 tests pass (2 `realdata` skipped); the smoke link
+  (demo cohort, synthetic metadata) and the cache step (public images) run end to end.
 - **Waiting for:** your review of `docs/contract.md` (Stage 0).
 - **Lab, Stage 0** (`docs/lab_runbook.md`): load MIMIC-IV v3.1, run the tests including
   `realdata`, reproduce the internship with the legacy scripts, then freeze the
   long-stay threshold.
 
 ## Stage summaries
+
+### Stage 1: link MIMIC-IV and MIMIC-CXR (build done, 2026-11-02)
+
+- **Code:** `fate_icu.data.cxr`, covering:
+  - metadata read as text, with a StudyDate/StudyTime parser that keeps fractions;
+  - synthetic metadata with 18 planted scenarios, keyed to any cohort;
+  - the linkage, the download list, the flow report, preprocessing and the cache.
+- **Selection:** frontal AP/PA, intime − 24 h ≤ study ≤ t0, the latest image, ties AP then
+  `dicom_id`, every stay kept with `has_cxr`, the contract split (D-024 to D-026). It
+  differs from MedFuse on every point (D-026).
+- **Preprocessing:** torchxrayvision 1.5.7 normalisation, centre crop, 224 plus a 512
+  display copy, cached per image. The import is guarded because torchxrayvision silences
+  all warnings (D-027).
+- **Smoke run:** all 86 demo stays got the correct planted answer across 18 scenarios; 71
+  stays were paired. The 4 public images (D-028) are cached.
+- **New dependencies:** torch 2.15, torchvision, torchxrayvision, scikit-image, pillow
+  (D-029). The lab driver must support CUDA 13 by Stage 3.
 
 ### Stage 2: hourly time-series tensors (build done, 2026-11-02)
 

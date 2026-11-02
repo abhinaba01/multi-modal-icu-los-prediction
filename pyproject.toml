@@ -21,6 +21,13 @@ dependencies = [
     "python-dotenv>=1.0",
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.1",
+    # FaTE-ICU Stage 1: chest X-ray preprocessing (PyPI torch is CPU-only on Windows and
+    # CUDA-enabled on Linux, so the lab gets GPU builds from the same lock)
+    "torch>=2.2,<3",
+    "torchvision>=0.17",
+    "torchxrayvision>=1.5,<1.6",
+    "scikit-image>=0.22",
+    "pillow>=10",
 ]
 
 [project.optional-dependencies]
