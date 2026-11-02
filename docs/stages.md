@@ -10,7 +10,7 @@ Referenced from CLAUDE.md. Read **only the stage I name** ("Start Stage N"); don
 
 | Stage | Name | Build (laptop) | Run (lab) |
 |---|---|---|---|
-| 0 | Repo and contract | in CLAUDE.md | – |
+| 0 | Repo and contract | done 2026-11-02 (pending contract review) | – |
 | 2 | Hourly time-series tensors | – | – |
 | 1 | Link MIMIC-IV and MIMIC-CXR | – | – |
 | 5 | RAG layer | – | – |

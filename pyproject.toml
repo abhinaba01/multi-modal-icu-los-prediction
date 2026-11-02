@@ -1,0 +1,64 @@
+[project]
+name = "fate-icu"
+version = "0.1.0"
+description = "FaTE-ICU: faithful, grounded explanations for multimodal ICU length-of-stay prediction"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    # legacy_los/requirements.txt (the internship pipeline the adapter imports), with upper
+    # bounds so the frozen legacy code runs unchanged (docs/decisions.md D-013):
+    # pandas 2.x supports numpy <= 2.3 (2.4+ floods pandas with timedelta deprecations);
+    # scikit-learn 1.10 removes LogisticRegression(penalty=None), which the legacy code uses.
+    "numpy>=1.24,<2.4",
+    "pandas>=2.0,<3",
+    "scipy>=1.10",
+    "scikit-learn>=1.3,<1.10",
+    "xgboost>=2.0",
+    "joblib>=1.2",
+    "pyarrow>=12",
+    "pyyaml>=6.0",
+    # FaTE-ICU Stage 0
+    "pydantic>=2.5",
+    "python-dotenv>=1.0",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+]
+
+[project.optional-dependencies]
+# GPU-only packages (bitsandbytes, vLLM) are added in Stage 6 and imported lazily.
+gpu = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.16",
+    "pre-commit>=3.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fate_icu"]
+
+[tool.pytest.ini_options]
+# legacy_los/tests runs in place: pytest's default "prepend" import mode puts
+# legacy_los/ on sys.path, so its `from src...` imports resolve without editing it.
+testpaths = ["tests", "legacy_los/tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "gpu: needs a CUDA GPU (skipped when none is available)",
+    "realdata: needs credentialed MIMIC data (runs only when FATE_MACHINE=lab)",
+    "demo: needs the local mimiciv_demo PostgreSQL database and demo CSVs (laptop only)",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["legacy_los", "notebooks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fate_icu"]

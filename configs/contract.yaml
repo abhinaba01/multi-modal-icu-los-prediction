@@ -1,0 +1,387 @@
+# FaTE-ICU contract: the internship's definitions, frozen (CLAUDE.md A4).
+# Read through fate_icu.data.contract.load_contract(); never hard-code these values.
+# Human-readable version with the evidence behind each entry: docs/contract.md.
+# Changing anything here changes a data definition: ask first, record in docs/decisions.md.
+
+contract_version: 1
+
+provenance:
+  legacy_dir: legacy_los
+  legacy_tag: v1.0-internship
+  legacy_commit: null            # unrecoverable: the original repository is gone
+  # LF-normalised SHA-256 of legacy_los/ (fate_icu.utils.hashing.tree_sha256, excluding
+  # run outputs data/ and results/). Identifies the snapshot instead of the commit hash.
+  legacy_tree_sha256: 3abe167bbf7cfe970acd0fb8af2d62d8c5883cc558bfbbf3e19d260e75f63a6a
+  original_metrics_available: false
+  note: >-
+    The internship report and repository are lost, so the commit hash and the original
+    test metrics are unavailable (docs/internship_metrics.md is intentionally blank).
+    Lab reproduction targets are the cohort counts recorded in legacy_los/README.md.
+
+mimic:
+  version: "3.1"                 # internship and lab
+  demo_version: "2.2"            # laptop: open MIMIC-IV Clinical Database Demo
+  mimic_code_tag:                # MIT-LCP/mimic-code release used to build the database
+    lab: v3.0.1                  # built for MIMIC-IV v3.1
+    laptop: v2.4.0               # last release built for MIMIC-IV v2.2 (the demo)
+  schemas:
+    hosp: mimiciv_hosp
+    icu: mimiciv_icu
+    derived: mimiciv_derived
+  tables:                        # legacy table key -> schema key
+    icustays: icu
+    chartevents: icu
+    inputevents: icu
+    outputevents: icu
+    admissions: hosp
+    patients: hosp
+    diagnoses_icd: hosp
+    labevents: hosp
+
+cohort:
+  unit: icu_stay
+  first_stay_only: false         # every ICU stay is eligible; a patient may contribute several
+  readmission_exclusion_hours: 48
+  readmission_rule: >-
+    Within each hadm_id, order ICU stays by intime; exclude a stay whose intime is less
+    than 48 h after the previous stay's outtime (the previous stay is taken from all
+    ICU stays, excluded or not). The first stay of an admission is always kept.
+  exclude_death_in_icu: true
+  death_rule: "exclude when admissions.deathtime <= icustays.outtime"
+  los_days_min_exclusive: 1      # keep 1 < los ...
+  los_days_max_inclusive: 21     # ... <= 21 days
+  min_anchor_age: 18             # no-op on MIMIC-IV (adults only)
+  drop_duplicate_rows: true      # identical feature rows (incl. los): keep the first
+  complete_case_feature_set: legacy_hempel   # drop stays missing any of these features
+  vital_mean_ranges:             # applied to the per-stay mean (paper Table 2)
+    heart_rate: {low: 25, high: 225, inclusive: true}
+    respiration: {low: 7, high: 40, inclusive: false}
+    saturation: {low: 50, high: 120, inclusive: false}
+    temperature: {low: 86, high: 113, inclusive: true}      # degrees Fahrenheit
+  stays_ending_before_t0: "excluded by construction: los > 1 day = W"
+  selection_uses_post_t0_information:
+    - "icustays.los / outtime (LOS window 1-21 days)"
+    - "admissions.deathtime (death in ICU)"
+    - "diagnoses_icd (complete case requires both diagnosis chapters to be mappable)"
+
+window:
+  hours: 24                      # W
+  t0: "icustays.intime + W"
+  event_time_column:             # the only timestamp the legacy features use
+    chartevents: charttime
+    labevents: charttime         # specimen time; the result may post later (storetime)
+    outputevents: charttime
+    inputevents: starttime
+  storetime_checked: false
+  definitions:                   # hours relative to icustays.intime
+    known_at_icu_admission:
+      description: "fixed at or before ICU admission"
+      end_hours: 0
+    after_hospital_discharge:
+      description: "assigned for billing after hospital discharge; time not recorded"
+      end_hours: null
+    mean_first_24h:
+      description: "(intime, t0]: mean of valuenum"
+      start_hours: 0
+      start_inclusive: false
+      end_hours: 24
+      end_inclusive: true
+    sofa_first_24h:
+      description: "[intime, t0): worst value, scored with the legacy SOFA thresholds"
+      start_hours: 0
+      start_inclusive: true
+      end_hours: 24
+      end_inclusive: false
+    sofa_6h_windows:
+      description: "[intime, t0) split into four 6-hour windows, LOCF between windows"
+      start_hours: 0
+      start_inclusive: true
+      end_hours: 24
+      end_inclusive: false
+      n_subwindows: 4
+      subwindow_hours: 6
+
+target:
+  kind: total_icu_los            # not remaining LOS
+  source: mimiciv_icu.icustays.los
+  unit: days
+  regression_rounding_dp: 2
+  long_stay:
+    rule: "long = 1 if round(los, 2) > threshold_days else 0"
+    method: train_q3             # Q3 of round(los, 2) over the FaTE train split
+    quantile: 0.75
+    threshold_days: null         # frozen here once from the first lab run
+    frozen_from: null            # run_id of that lab run
+    legacy_method: "Q3 of round(los, 2) over the whole final cohort, test included (4.11 d on v3.1)"
+
+feature_groups:
+  admission:
+    label: "admission details"
+    available_at_t0: true
+    description: "Care unit, admission type and source, known at ICU admission."
+  diagnoses:
+    label: "billed diagnoses"
+    available_at_t0: false
+    description: >-
+      ICD codes from mimiciv_hosp.diagnoses_icd are assigned for billing after hospital
+      discharge, so they are not available at t0. Kept only for B0-faithful.
+  demographics:
+    label: "demographics"
+    available_at_t0: true
+    description: "Age and sex as recorded."
+  vitals:
+    label: "vital signs (mean of first 24 h)"
+    available_at_t0: true
+    description: "Mean of chartevents valuenum over (intime, t0]."
+  labs:
+    label: "laboratory results (mean of first 24 h)"
+    available_at_t0: true
+    description: "Mean of labevents valuenum over (intime, t0], joined on hadm_id."
+  sofa_static:
+    label: "SOFA score (worst of first 24 h)"
+    available_at_t0: true
+    description: "Legacy hand-rolled SOFA over [intime, t0); unmeasured components score 0."
+  sofa_trajectory:
+    label: "SOFA trajectory across 6-hour windows"
+    available_at_t0: true
+    description: "Change, slope and summary of 6-hourly SOFA scores (renal: creatinine only)."
+  sofa_onset:
+    label: "order of organ-dysfunction onset"
+    available_at_t0: true
+    description: "Window in which each organ first reaches sub-score >= 1, and which failed first."
+  sofa_interactions:
+    label: "SOFA organ interaction terms"
+    available_at_t0: true
+    description: "Products of coupled static SOFA sub-scores."
+
+# Order matches the legacy feature tables (legacy_los/src/features/build_dataset.py).
+features:
+  # --- admission --------------------------------------------------------------------
+  - {name: first_careunit, group: admission, kind: categorical, window: known_at_icu_admission, aggregation: as recorded,
+     source: mimiciv_icu.icustays.first_careunit, label: "first ICU care unit"}
+  - {name: admission_type, group: admission, kind: categorical, window: known_at_icu_admission, aggregation: as recorded,
+     source: mimiciv_hosp.admissions.admission_type, label: "hospital admission type"}
+  - {name: admission_location, group: admission, kind: categorical, window: known_at_icu_admission, aggregation: as recorded,
+     source: mimiciv_hosp.admissions.admission_location, label: "where the patient was admitted from"}
+  # --- diagnoses (not available at t0) -------------------------------------------------
+  - {name: Diagnosis_1, group: diagnoses, kind: categorical, window: after_hospital_discharge, aggregation: ICD-10 chapter,
+     source: "mimiciv_hosp.diagnoses_icd seq_num 1 (ICD-9 mapped with the CMS 2018 GEM)",
+     label: "ICD-10 chapter of the first billed diagnosis"}
+  - {name: Diagnosis_2, group: diagnoses, kind: categorical, window: after_hospital_discharge, aggregation: ICD-10 chapter,
+     source: "mimiciv_hosp.diagnoses_icd seq_num 2 (ICD-9 mapped with the CMS 2018 GEM)",
+     label: "ICD-10 chapter of the second billed diagnosis"}
+  # --- demographics -------------------------------------------------------------------
+  - {name: gender, group: demographics, kind: categorical, window: known_at_icu_admission, aggregation: as recorded,
+     source: mimiciv_hosp.patients.gender, label: "sex"}
+  - {name: anchor_age, group: demographics, kind: numeric, window: known_at_icu_admission, aggregation: as recorded,
+     source: mimiciv_hosp.patients.anchor_age, label: "age (years)"}
+  # --- vitals: mean over (intime, t0] --------------------------------------------------
+  - {name: heart_rate, group: vitals, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_icu.chartevents itemid 220045", label: "mean heart rate (beats/min)"}
+  - {name: respiration, group: vitals, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_icu.chartevents itemid 220210", label: "mean respiratory rate (breaths/min)"}
+  - {name: saturation, group: vitals, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_icu.chartevents itemid 220277", label: "mean oxygen saturation, SpO2 (%)"}
+  - {name: temperature, group: vitals, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_icu.chartevents itemid 223761", label: "mean body temperature (degrees F)"}
+  - {name: gcs_eye, group: vitals, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_icu.chartevents itemid 220739", label: "mean GCS eye-opening score"}
+  - {name: gcs_verbal, group: vitals, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_icu.chartevents itemid 223900", label: "mean GCS verbal score"}
+  - {name: gcs_motor, group: vitals, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_icu.chartevents itemid 223901", label: "mean GCS motor score"}
+  # --- labs: mean over (intime, t0] (18 items; Phosphate 50970 deliberately absent) ----
+  - {name: anion_gap, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 50868", label: "mean anion gap (mEq/L)"}
+  - {name: bicarbonate, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 50882", label: "mean serum bicarbonate (mEq/L)"}
+  - {name: chloride, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 50902", label: "mean serum chloride (mEq/L)"}
+  - {name: creatinine, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 50912", label: "mean serum creatinine (mg/dL)"}
+  - {name: glucose, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 50931", label: "mean blood glucose (mg/dL)"}
+  - {name: magnesium, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 50960", label: "mean serum magnesium (mg/dL)"}
+  - {name: potassium, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 50971", label: "mean serum potassium (mEq/L)"}
+  - {name: sodium, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 50983", label: "mean serum sodium (mEq/L)"}
+  - {name: urea_nitrogen, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51006", label: "mean blood urea nitrogen (mg/dL)"}
+  - {name: hematocrit, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51221", label: "mean haematocrit (%)"}
+  - {name: hemoglobin, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51222", label: "mean haemoglobin (g/dL)"}
+  - {name: mch, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51248", label: "mean corpuscular haemoglobin, MCH (pg)"}
+  - {name: mchc, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51249", label: "mean corpuscular haemoglobin concentration, MCHC (g/dL)"}
+  - {name: mcv, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51250", label: "mean corpuscular volume, MCV (fL)"}
+  - {name: platelet_count, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51265", label: "mean platelet count (K/uL)"}
+  - {name: rdw, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51277", label: "mean red cell distribution width, RDW (%)"}
+  - {name: red_blood_cells, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51279", label: "mean red blood cell count (m/uL)"}
+  - {name: white_blood_cells, group: labs, kind: numeric, window: mean_first_24h, aggregation: mean,
+     source: "mimiciv_hosp.labevents itemid 51301", label: "mean white blood cell count (K/uL)"}
+  # --- static SOFA: worst over [intime, t0) --------------------------------------------
+  - {name: sofa_resp, group: sofa_static, kind: numeric, window: sofa_first_24h, aggregation: sub-score 0-4,
+     source: "PaO2 50821 / FiO2 223835 (SpO2 220277 fallback)", label: "respiratory SOFA sub-score (worst, first 24 h)"}
+  - {name: sofa_cardio, group: sofa_static, kind: numeric, window: sofa_first_24h, aggregation: sub-score 0-4,
+     source: "inputevents vasopressor rates; MAP 220052/220181/225312",
+     label: "cardiovascular SOFA sub-score (worst, first 24 h)"}
+  - {name: sofa_hepatic, group: sofa_static, kind: numeric, window: sofa_first_24h, aggregation: sub-score 0-4,
+     source: "labevents bilirubin 50885", label: "liver SOFA sub-score (worst, first 24 h)"}
+  - {name: sofa_coag, group: sofa_static, kind: numeric, window: sofa_first_24h, aggregation: sub-score 0-4,
+     source: "labevents platelets 51265", label: "coagulation SOFA sub-score (worst, first 24 h)"}
+  - {name: sofa_renal, group: sofa_static, kind: numeric, window: sofa_first_24h, aggregation: sub-score 0-4,
+     source: "labevents creatinine 50912; outputevents urine", label: "renal SOFA sub-score (worst, first 24 h)"}
+  - {name: sofa_neuro, group: sofa_static, kind: numeric, window: sofa_first_24h, aggregation: sub-score 0-4,
+     source: "chartevents GCS 220739+223900+223901", label: "neurological (GCS) SOFA sub-score (worst, first 24 h)"}
+  - {name: sofa_total, group: sofa_static, kind: numeric, window: sofa_first_24h, aggregation: sum of sub-scores,
+     source: "the six sub-scores above", label: "total SOFA score (worst, first 24 h)"}
+  - {name: urine_24h, group: sofa_static, kind: numeric, window: sofa_first_24h, aggregation: sum (0 if none charted),
+     source: "mimiciv_icu.outputevents urine itemids", label: "total urine output in first 24 h (mL)"}
+  - {name: bilirubin_max, group: sofa_static, kind: numeric, window: sofa_first_24h, aggregation: max (0 if not measured),
+     source: "mimiciv_hosp.labevents itemid 50885", label: "highest total bilirubin in first 24 h (mg/dL)"}
+  # --- SOFA dynamics over four 6-hour windows (legacy column order) --------------------
+  - {name: sofa_resp_delta, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: last - first window,
+     source: "6-hourly respiratory SOFA", label: "change in respiratory SOFA, hours 0-6 to 18-24"}
+  - {name: sofa_resp_slope, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: OLS slope per window,
+     source: "6-hourly respiratory SOFA", label: "trend of respiratory SOFA over the first 24 h"}
+  - {name: sofa_resp_onset_win, group: sofa_onset, kind: numeric, window: sofa_6h_windows, aggregation: first window >= 1 (4 = never),
+     source: "6-hourly respiratory SOFA", label: "first 6-hour window with respiratory dysfunction"}
+  - {name: sofa_cardio_delta, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: last - first window,
+     source: "6-hourly cardiovascular SOFA", label: "change in cardiovascular SOFA, hours 0-6 to 18-24"}
+  - {name: sofa_cardio_slope, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: OLS slope per window,
+     source: "6-hourly cardiovascular SOFA", label: "trend of cardiovascular SOFA over the first 24 h"}
+  - {name: sofa_cardio_onset_win, group: sofa_onset, kind: numeric, window: sofa_6h_windows, aggregation: first window >= 1 (4 = never),
+     source: "6-hourly cardiovascular SOFA", label: "first 6-hour window with cardiovascular dysfunction"}
+  - {name: sofa_hepatic_delta, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: last - first window,
+     source: "6-hourly liver SOFA", label: "change in liver SOFA, hours 0-6 to 18-24"}
+  - {name: sofa_hepatic_slope, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: OLS slope per window,
+     source: "6-hourly liver SOFA", label: "trend of liver SOFA over the first 24 h"}
+  - {name: sofa_hepatic_onset_win, group: sofa_onset, kind: numeric, window: sofa_6h_windows, aggregation: first window >= 1 (4 = never),
+     source: "6-hourly liver SOFA", label: "first 6-hour window with liver dysfunction"}
+  - {name: sofa_coag_delta, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: last - first window,
+     source: "6-hourly coagulation SOFA", label: "change in coagulation SOFA, hours 0-6 to 18-24"}
+  - {name: sofa_coag_slope, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: OLS slope per window,
+     source: "6-hourly coagulation SOFA", label: "trend of coagulation SOFA over the first 24 h"}
+  - {name: sofa_coag_onset_win, group: sofa_onset, kind: numeric, window: sofa_6h_windows, aggregation: first window >= 1 (4 = never),
+     source: "6-hourly coagulation SOFA", label: "first 6-hour window with coagulation dysfunction"}
+  - {name: sofa_renal_delta, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: last - first window,
+     source: "6-hourly renal SOFA (creatinine only)", label: "change in renal SOFA (creatinine), hours 0-6 to 18-24"}
+  - {name: sofa_renal_slope, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: OLS slope per window,
+     source: "6-hourly renal SOFA (creatinine only)", label: "trend of renal SOFA (creatinine) over the first 24 h"}
+  - {name: sofa_renal_onset_win, group: sofa_onset, kind: numeric, window: sofa_6h_windows, aggregation: first window >= 1 (4 = never),
+     source: "6-hourly renal SOFA (creatinine only)", label: "first 6-hour window with renal dysfunction (creatinine)"}
+  - {name: sofa_neuro_delta, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: last - first window,
+     source: "6-hourly neurological SOFA", label: "change in neurological SOFA, hours 0-6 to 18-24"}
+  - {name: sofa_neuro_slope, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: OLS slope per window,
+     source: "6-hourly neurological SOFA", label: "trend of neurological SOFA over the first 24 h"}
+  - {name: sofa_neuro_onset_win, group: sofa_onset, kind: numeric, window: sofa_6h_windows, aggregation: first window >= 1 (4 = never),
+     source: "6-hourly neurological SOFA", label: "first 6-hour window with neurological dysfunction"}
+  - {name: sofa_total_first, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: first window,
+     source: "6-hourly total SOFA", label: "total SOFA in hours 0-6"}
+  - {name: sofa_total_last, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: last window,
+     source: "6-hourly total SOFA", label: "total SOFA in hours 18-24"}
+  - {name: sofa_total_max, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: max over windows,
+     source: "6-hourly total SOFA", label: "highest 6-hourly total SOFA"}
+  - {name: sofa_total_delta, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: last - first window,
+     source: "6-hourly total SOFA", label: "change in total SOFA, hours 0-6 to 18-24"}
+  - {name: sofa_total_slope, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: OLS slope per window,
+     source: "6-hourly total SOFA", label: "trend of total SOFA over the first 24 h"}
+  - {name: sofa_total_auc, group: sofa_trajectory, kind: numeric, window: sofa_6h_windows, aggregation: trapezoid area,
+     source: "6-hourly total SOFA", label: "cumulative total SOFA burden over the first 24 h"}
+  - {name: sofa_n_failed_organs, group: sofa_onset, kind: numeric, window: sofa_6h_windows, aggregation: count,
+     source: "6-hourly SOFA sub-scores", label: "number of organs with dysfunction in the first 24 h"}
+  - {name: sofa_time_to_first_failure_win, group: sofa_onset, kind: numeric, window: sofa_6h_windows,
+     aggregation: first window with any dysfunction (4 = none),
+     source: "6-hourly SOFA sub-scores", label: "first 6-hour window with any organ dysfunction"}
+  - {name: sofa_first_fail_resp, group: sofa_onset, kind: binary, window: sofa_6h_windows, aggregation: indicator,
+     source: "6-hourly SOFA sub-scores", label: "respiratory dysfunction among the first to appear"}
+  - {name: sofa_first_fail_cardio, group: sofa_onset, kind: binary, window: sofa_6h_windows, aggregation: indicator,
+     source: "6-hourly SOFA sub-scores", label: "cardiovascular dysfunction among the first to appear"}
+  - {name: sofa_first_fail_hepatic, group: sofa_onset, kind: binary, window: sofa_6h_windows, aggregation: indicator,
+     source: "6-hourly SOFA sub-scores", label: "liver dysfunction among the first to appear"}
+  - {name: sofa_first_fail_coag, group: sofa_onset, kind: binary, window: sofa_6h_windows, aggregation: indicator,
+     source: "6-hourly SOFA sub-scores", label: "coagulation dysfunction among the first to appear"}
+  - {name: sofa_first_fail_renal, group: sofa_onset, kind: binary, window: sofa_6h_windows, aggregation: indicator,
+     source: "6-hourly SOFA sub-scores", label: "renal dysfunction among the first to appear"}
+  - {name: sofa_first_fail_neuro, group: sofa_onset, kind: binary, window: sofa_6h_windows, aggregation: indicator,
+     source: "6-hourly SOFA sub-scores", label: "neurological dysfunction among the first to appear"}
+  # --- SOFA interaction terms (products of static sub-scores) -------------------------
+  - {name: sofa_resp_x_cardio, group: sofa_interactions, kind: numeric, window: sofa_first_24h, aggregation: product,
+     source: "sofa_resp x sofa_cardio", label: "respiratory x cardiovascular SOFA interaction"}
+  - {name: sofa_cardio_x_renal, group: sofa_interactions, kind: numeric, window: sofa_first_24h, aggregation: product,
+     source: "sofa_cardio x sofa_renal", label: "cardiovascular x renal SOFA interaction"}
+  - {name: sofa_renal_x_hepatic, group: sofa_interactions, kind: numeric, window: sofa_first_24h, aggregation: product,
+     source: "sofa_renal x sofa_hepatic", label: "renal x liver SOFA interaction"}
+  - {name: sofa_neuro_x_resp, group: sofa_interactions, kind: numeric, window: sofa_first_24h, aggregation: product,
+     source: "sofa_neuro x sofa_resp", label: "neurological x respiratory SOFA interaction"}
+  - {name: sofa_coag_x_hepatic, group: sofa_interactions, kind: numeric, window: sofa_first_24h, aggregation: product,
+     source: "sofa_coag x sofa_hepatic", label: "coagulation x liver SOFA interaction"}
+  - {name: sofa_resp_x_renal, group: sofa_interactions, kind: numeric, window: sofa_first_24h, aggregation: product,
+     source: "sofa_resp x sofa_renal", label: "respiratory x renal SOFA interaction"}
+
+feature_sets:
+  legacy_hempel:
+    description: "internship run_hempel.py feature table (B0-faithful only)"
+    groups: [admission, diagnoses, demographics, vitals, labs]
+    t0_only: false
+  legacy_hempel_sofa:
+    description: "internship run_hempel_sofa.py feature table (B0-faithful only)"
+    groups: [admission, diagnoses, demographics, vitals, labs, sofa_static]
+    t0_only: false
+  legacy_hempel_sofa_dynamics:
+    description: "internship run_hempel_sofa_dynamics.py feature table (B0-faithful only)"
+    groups: [admission, diagnoses, demographics, vitals, labs, sofa_trajectory, sofa_onset, sofa_interactions]
+    t0_only: false
+  fate_static:
+    description: "FaTE-ICU static input and the B0 comparison arm: every group available at t0"
+    groups: [admission, demographics, vitals, labs, sofa_static, sofa_trajectory, sofa_onset, sofa_interactions]
+    t0_only: true
+
+splits:
+  fate:                          # used by every FaTE-ICU model arm
+    method: patient_hash
+    group_column: subject_id
+    seed: 666
+    fractions: {train: 0.7, val: 0.1, test: 0.2}
+    rule: >-
+      u = first 8 bytes of sha256("<seed>:<subject_id>") / 2^64; train if u < 0.7,
+      val if u < 0.8, else test. All stays of a patient share a split.
+  legacy:                        # B0-faithful reproduction only
+    method: repeated_random_stay_level
+    n_repeats: 10
+    test_size: 0.2
+    seed: 666                    # repeat r uses seed + r (numpy RandomState permutation)
+    patient_level: false
+
+b0:                              # internship two-stage model (legacy factories, no tuning)
+  prior: XGBoost
+  xgb_n_estimators: 3000
+  rf_n_estimators: 1000
+  random_state: 666
+  stage1_threshold: gmean_on_train_scores
+  stage2: regress_on_predicted_short_train_stays
+  hard_label_threshold: 0.5      # legacy classification metrics use predict()
+
+reproduction_targets:            # legacy_los/README.md, internship run on MIMIC-IV v3.1
+  mimic_version: "3.1"
+  cohort_flow:
+    icustays: 94458
+    after_readmission_48h: 89952
+    after_death_in_icu: 83041
+    after_los_1_21: 64742
+    after_age: 64742
+    final: 55394
+  whole_cohort_q3_days: 4.11
+  long_prevalence: 0.249
+  tolerance:
+    counts: 0
+    q3_days: 0.01
+    long_prevalence: 0.002

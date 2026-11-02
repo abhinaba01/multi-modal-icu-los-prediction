@@ -1,0 +1,35 @@
+# legacy_los/ is a frozen snapshot: no hook may rewrite it.
+exclude: ^legacy_los/
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+
+  - repo: local
+    hooks:
+      - id: no-data-files
+        name: block data files, .env and data folders
+        language: fail
+        entry: "credentialed or derived data must never be committed (see CLAUDE.md A3)"
+        files: '(^|/)\.env$|\.(parquet|npz|npy|pt|pth|ckpt|safetensors)$|^(data|artifacts|outputs|reports|checkpoints|mlruns)/'
+      - id: no-csv-outside-fixtures
+        name: block CSV files outside tests/fixtures
+        language: fail
+        entry: "CSV files are only allowed under tests/fixtures/"
+        files: '\.csv$'
+        exclude: '^tests/fixtures/'
