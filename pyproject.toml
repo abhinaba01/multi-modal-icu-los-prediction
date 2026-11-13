@@ -28,6 +28,15 @@ dependencies = [
     "torchxrayvision>=1.5,<1.6",
     "scikit-image>=0.22",
     "pillow>=10",
+    # FaTE-ICU Stage 5: RAG layer. BM25 (bm25s, with PyStemmer's English stemmer), the
+    # MedCPT encoders and cross-encoder (transformers; huggingface-hub resolves pinned
+    # revisions), exact inner-product search (faiss-cpu), guideline PDFs (pypdf).
+    "bm25s>=0.2",
+    "PyStemmer>=2.2",
+    "faiss-cpu>=1.8",
+    "transformers>=4.50",
+    "huggingface-hub>=0.30",
+    "pypdf>=5",
 ]
 
 [project.optional-dependencies]

@@ -399,3 +399,224 @@ between intime − lookback and the outtime of one of their ICU stays.
 **Alternatives.** Trust the Stage 1 background.
 **Reason.** The PhysioNet page does not confirm that MIMIC-CXR uses MIMIC-IV's per-patient
 date shift. If it did not, this share would be near zero and the linkage meaningless.
+
+## D-031 · 2026-11-13 · Stage 5 dependencies and the MedCPT revisions
+
+**Decision.**
+- bm25s 0.3.16 with PyStemmer 3.1.0, faiss-cpu 1.15.1, transformers 5.22.2 (tokenizers
+  0.23.3), pypdf 7.0.0, and huggingface-hub 2.4.0. huggingface-hub is declared because the
+  code calls it; transformers already required it.
+- MedCPT at fixed commits: query encoder `d83a36cc…`, article encoder `d05a736d…`,
+  cross-encoder `71caf65d…` (about 1.3 GB in the Hugging Face cache, downloaded 2026-11-10).
+- Checked offline under transformers 5.22.2: all three reproduce the outputs printed on their
+  model cards (article embeddings to 4 decimals, cross-encoder logits within 0.0001).
+- MedCPT is a United States Government work (public domain, per its LICENSE file).
+
+**Alternatives.** rank-bm25; sentence-transformers.
+**Reason.** The Stage 5 spec names bm25s, MedCPT and FAISS. These versions are newer than most
+examples online, so the code follows the installed APIs:
+- transformers 5's `BertTokenizer` takes a vocabulary dict and ignores `vocab_file=`;
+- bm25s fails on an empty query;
+- FAISS returns tied scores in arbitrary order and pads results past the index size with -1.
+
+## D-032 · 2026-11-13 · Where the Stage 5 data lives
+
+**Decision.** `FATE_RAG_DIR` holds everything; its default is `<FATE_ARTIFACTS_DIR>/rag`.
+- `raw/` holds the downloads, shared by all configs.
+- Each config has its own build folder (`rag_smoke/`, `rag_full/`) with `corpus/<id>/`,
+  `index/<version>/`, `eval/`, and the pointers `corpus.CURRENT` and `index.CURRENT`.
+- The full config refuses a `FATE_RAG_DIR` inside OneDrive.
+- `NCBI_EMAIL` and `NCBI_API_KEY` are secret settings: sent only to NCBI, never printed,
+  never written to a manifest.
+
+**Alternatives.** `artifacts/` inside the repository.
+**Reason.** The data is several GB and the repository is in OneDrive. A smoke run must never
+replace the full index.
+
+## D-033 · 2026-11-13 · PubMed through NCBI E-utilities
+
+**Decision (your choice 1A).**
+- `configs/rag/pubmed_queries.yaml` holds 7 topic searches (the Stage 5 topics) and 37 driver
+  searches that cover all 50 driver keys.
+  - Every search is ANDed with an ICU block: MeSH Intensive Care Units, Critical Care and
+    Critical Illness, plus title/abstract terms.
+  - Driver searches are also ANDed with an outcome block: length of stay, mortality,
+    prognosis or outcome.
+  - Filters: English, with an abstract, not animal-only, not paediatric-only, no comments,
+    editorials, letters, news, errata, retractions or expressions of concern; 1990 to 2026.
+- Each search is sliced by publication date (the whole range, then years, months, days), so
+  no slice reaches esearch's 10,000-id cap. The slices must return the search's full count,
+  or the fetch stops.
+- The PMIDs are saved in `raw/pubmed/pmids.json`, which pins the corpus.
+- Records are fetched in resumable batches of 200, at most 3 requests a second (10 with an
+  API key). The fetch stops if more than 1% of records are missing.
+- Parsing drops records without a title or abstract, non-English records, retracted
+  articles (by publication type or retraction notice) and non-research publication types.
+  Structured-abstract labels stay inline, and the section title is empty, so MedCPT sees
+  (title, abstract) as it was trained.
+
+**Alternatives.** MedRAG's 24-million-snippet copy, filtered by keywords on Kaggle.
+**Reason.** MeSH-based selection, current literature, runs on the laptop, and the saved PMID
+list pins the corpus. The search terms are Claude's draft, to be reviewed before the full
+fetch.
+
+## D-034 · 2026-11-13 · All of StatPearls
+
+**Decision (your choice 3).**
+- The NCBI Bookshelf archive `statpearls_NBK430685.tar.gz`: 2,047,364,463 bytes,
+  Last-Modified 2026-11-08, pinned as `expected_size` in the full config. The download
+  resumes after an interruption and records a SHA-256 sidecar.
+- The archive is streamed, never extracted. Only `.nxml` members are read. Unsafe or
+  oversized members stop the build, and so do more than 1% unparseable articles.
+- Dropped sections: "Continuing Education Activity", "Review Questions", "References" and
+  "Disclosure(s)".
+- Nested sections become "Parent: Child". Citation markers, figures, tables, captions and
+  reference lists are removed.
+- Licence CC BY-NC-ND 4.0: passages are quoted with attribution, and the parsed copy is
+  never published.
+
+**Alternatives.** An ICU-relevant subset; MedRAG's build script.
+**Reason.**
+- There is no filter to justify.
+- General articles (anaemia, hyperkalaemia, lactic acidosis) explain our channels.
+- The re-ranker pushes off-topic passages down.
+
+The parser was built on synthetic files; its first run on the real archive reports parse and
+skip counts, which are checked before the corpus is used.
+
+## D-035 · 2026-11-13 · Guidelines
+
+**Decision (your choice 4).**
+- Sources: SSC 2021, KDIGO AKI 2012, ESICM ARDS 2023 and PADIS 2018, as PDFs you download
+  into `raw/guidelines/` under the file names in `configs/rag/full.yaml`. The build stops
+  while a licence still says "TO CONFIRM".
+- PDF text comes from pypdf's plain mode, which keeps two-column pages in reading order.
+- Running headers, footers and page numbers are dropped, and hyphenated line breaks are
+  rejoined.
+- Headings are lines that are numbered, start with a keyword (Recommendation, Chapter,
+  Section, Appendix, Part, Annex), or are in Title Case or capitals.
+- Excluded sections are skipped: references, acknowledgements, funding, conflicts of
+  interest and similar. Inside a reference list only a Chapter, Section, Appendix, Part or
+  Annex heading ends the skip.
+- Page labels are kept as locators ("p. 1183").
+- JATS XML (e.g. from PubMed Central) is accepted too.
+
+**Alternatives.** Heading detection by font size; plain text without sections.
+**Reason.** Sections and page locators make citations checkable. Known limit: unnumbered
+sentence-case headings are not detected, so their text stays in the previous section. The
+sections of the four real PDFs will be inspected once they are downloaded, and page ranges
+set if needed.
+
+## D-036 · 2026-11-13 · Passages
+
+**Decision.**
+- A passage holds at most 300 tokens of the MedCPT article tokenizer. It is split at
+  sentence boundaries and never crosses a section.
+- Within a section the split uses the fewest chunks, then the most even ones, so chunks hold
+  150 to 300 tokens unless the section is short. Passages under 5 tokens are dropped.
+- Text is NFKC-normalised. Each passage keeps its title, section and page locator, and its
+  id is `<source>:<doc_id>:<chunk>`.
+- The corpus is a Parquet file sorted by id, hashed over its canonical JSON content.
+
+**Alternatives.** Whole abstracts (MedRAG); fixed word windows; a sentence-splitter package
+(another dependency).
+**Reason.** 300 tokens fit both the cross-encoder and the Stage 7 NLI checker (512 tokens
+together with the claim). Balanced chunks avoid tiny tail passages. Content hashing gives the
+same corpus id on every machine.
+
+## D-037 · 2026-11-13 · Retrieval
+
+**Decision.**
+- **BM25:** the Lucene variant, k1 1.5, b 0.75, English stopwords and the Snowball stemmer,
+  over title, section and text. Only positive scores count as retrieved.
+- **Dense:** the MedCPT article encoder over (title, "section. text"), the CLS vector and the
+  raw inner product, in an exact FAISS `IndexFlatIP`, fp32.
+- **Hybrid:** reciprocal-rank fusion (k = 60) of the two top-50 lists.
+- **Rerank:** the MedCPT cross-encoder on "Title. text" for the first 50 fused candidates.
+- **Result:** the top 3 per driver, deduplicated, numbered R1…Rn in order of first appearance.
+- **Ties:** every tie is broken by corpus row (the passage id). FAISS itself returned tied
+  results in the order [3, 2, 1, 0]; when a tie could straddle the cut-off, that query is
+  scored exactly against all vectors.
+
+**Alternatives.** Approximate FAISS indexes (HNSW, IVF); cosine similarity; reranking every
+fused candidate.
+**Reason.** This follows the Stage 5 spec and MedCPT's own usage, and exact search keeps
+retrieval deterministic.
+
+## D-038 · 2026-11-13 · Queries, the query bank and the packet key
+
+**Decision.**
+- Template: "{label} associated with {longer|shorter} intensive care unit length of stay".
+- `configs/rag/queries.yaml` holds a label for each of the 50 driver keys. A label that
+  differs from its source says why, for example:
+  - "hemoglobin" (US spelling);
+  - "SOFA score" without "(hourly)";
+  - static groups written out without numbers;
+  - image concepts phrased "… on chest radiograph".
+- A label may hold no digits outside words, no percentages and no units (tested).
+- All 100 queries are run once into `query_bank.json`. `retrieve(packet)` looks up
+  (modality, key, direction), so it is deterministic and needs no model at explanation time.
+- **Stage 4 packets must give each driver its canonical `key`** (channel name, static group
+  or image concept). Retrieval never reads a driver's label, observed, time or effect fields.
+
+**Alternatives.** Queries built from packet labels; live retrieval for each packet.
+**Reason.** Packet labels can carry patient values (Stage 4's example image label contains a
+probability). A fixed bank makes the Stage 6 data reproducible across machines.
+
+## D-039 · 2026-11-13 · The GPU step
+
+**Decision.**
+- One command, `fate_icu.rag.gpu_step`, does the model-heavy work: it embeds the passages
+  (resumable shards), builds FAISS, encodes the queries and reranks.
+  - It runs on a Kaggle or Colab GPU for the full corpus, and on the laptop CPU for the
+    smoke corpus, with the same code.
+  - It reads a bundle the laptop prepares: a fresh wheel of the code, the corpus,
+    `gpu_spec.json`, and the laptop's BM25 lists.
+- Back on the laptop, `build_index --part dense` checks the output before installing it:
+  - the embeddings' corpus hash and model;
+  - the BM25 lists, which must be identical;
+  - the dense lists, recomputed for every query (mean overlap at least 0.9);
+  - the reranking, recomputed for 2 queries.
+
+**Alternatives.** Reranking on the laptop.
+**Reason.** Measured on this i7-2600 CPU:
+- the cross-encoder scores 1.5 pairs a second, so the full bank's 5,000 rerank pairs would
+  take about an hour;
+- the article encoder embeds 1.6 passages a second, so the corpus would take about 90 hours.
+
+This is the split in the approved plan.
+
+## D-040 · 2026-11-13 · Retrieval evaluation protocol
+
+**Decision.**
+- **Queries:** the 50 "longer" queries.
+- **Pool:** the union of each system's top 5, shown in a blind, deterministic order.
+- **Grades:** 0, 1 or 2 (docs/rag_grading_guide.md).
+- **Metrics:**
+  - P@3 with relevant meaning grade 1 or more (primary), and P@3 at grade 2 (strict);
+  - nDCG@5 with gains 2^g − 1 and the ideal ordering of all judged passages of the query.
+- **Confidence intervals:** percentile bootstrap, 95%, over 1,000 resamples of queries.
+- **Comparisons:** hybrid vs BM25, hybrid vs dense, hybrid + rerank vs hybrid, and dense vs
+  BM25. Each has a paired bootstrap CI and a two-sided sign-flip permutation p (10,000
+  permutations, exact when possible), with Holm correction within each metric.
+- Labels from another index version are refused.
+- `configs/rag/relevance_labels.tsv` stores ids and grades only.
+
+**Alternatives.** Binary relevance; relevance judged by an LLM.
+**Reason.** Graded labels serve both precision and nDCG, and human labels are the reference
+standard. The labels file can be committed because it holds no copyrighted text.
+
+## D-041 · 2026-11-13 · Index versions and the lab copy
+
+**Decision.**
+- The index version is the first 16 hex characters of a SHA-256 over:
+  - the corpus hash;
+  - the BM25 parameters;
+  - both MedCPT encoders' revisions;
+  - the embedding settings.
+- `index.json` records the SHA-256 of every file and the query-bank hash, and downstream run
+  manifests record both.
+- `fate_icu.rag.verify` re-checks a copied index in the lab.
+
+**Reason.** The Stage 5 spec: "Version the index (corpus hash + encoder revision) in the run
+manifest."

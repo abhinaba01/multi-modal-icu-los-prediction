@@ -1,0 +1,109 @@
+<?xml version="1.0" ?>
+<!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle, 1st January 2025//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd">
+<!-- Synthetic records written for the FaTE-ICU tests: invented text, not real studies. -->
+<PubmedArticleSet>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000007</PMID>
+    <Article PubModel="Print">
+      <Journal><JournalIssue><PubDate><Year>2022</Year></PubDate></JournalIssue><ISOAbbreviation>Synth Crit Care</ISOAbbreviation></Journal>
+      <ArticleTitle>Editorial: the next decade of intensive care research.</ArticleTitle>
+      <Abstract><AbstractText>A synthetic editorial that must be excluded from the corpus.</AbstractText></Abstract>
+      <AuthorList><Author><LastName>Lindqvist</LastName><Initials>E</Initials></Author></AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016421">Editorial</PublicationType></PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000008</PMID>
+    <Article PubModel="Electronic">
+      <Journal>
+        <JournalIssue CitedMedium="Internet"><PubDate><Season>Spring</Season></PubDate></JournalIssue>
+        <ISOAbbreviation>Synth Neurocrit Care</ISOAbbreviation>
+      </Journal>
+      <ArticleTitle>Delirium after deep sedation in mechanically ventilated adults.</ArticleTitle>
+      <Abstract>
+        <AbstractText Label="OBJECTIVE">To describe delirium in adults who received deep sedation during mechanical ventilation.</AbstractText>
+        <AbstractText Label="RESULTS">Delirium was common in the first week, especially after benzodiazepine infusions. Patients with delirium were extubated later and spent more days in intensive care. Light sedation targets were associated with fewer delirium days.</AbstractText>
+      </Abstract>
+      <AuthorList>
+        <Author><LastName>Kowalski</LastName><Initials>M</Initials></Author>
+        <Author><LastName>Tanaka</LastName><Initials>H</Initials></Author>
+      </AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+      <ArticleDate DateType="Electronic"><Year>2021</Year><Month>04</Month><Day>02</Day></ArticleDate>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000009</PMID>
+    <Article PubModel="Print">
+      <Journal><JournalIssue><PubDate><Year>2015</Year></PubDate></JournalIssue><ISOAbbreviation>Synth Shock</ISOAbbreviation></Journal>
+      <ArticleTitle>Thrombocytopenia in septic shock: a synthetic cohort.</ArticleTitle>
+      <Abstract><AbstractText>A synthetic study later retracted; only the retraction notice marks it.</AbstractText></Abstract>
+      <AuthorList><Author><LastName>Ferreira</LastName><Initials>L</Initials></Author></AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+    </Article>
+    <CommentsCorrectionsList>
+      <CommentsCorrections RefType="RetractionIn"><RefSource>Synth Shock. 2016</RefSource><PMID Version="1">90000097</PMID></CommentsCorrections>
+    </CommentsCorrectionsList>
+  </MedlineCitation>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000010</PMID>
+    <Article PubModel="Print">
+      <Journal><JournalIssue><PubDate><Year>2023</Year><Month>Jul</Month></PubDate></JournalIssue><ISOAbbreviation>Synth Crit Care</ISOAbbreviation></Journal>
+      <ArticleTitle>Norepinephrine dose in the first day of septic shock and the duration of organ support.</ArticleTitle>
+      <Abstract>
+        <AbstractText Label="BACKGROUND">Vasopressors restore perfusion pressure in septic shock, but high doses may signal refractory shock. The relation between early norepinephrine dose and the duration of organ support is not well described in mixed intensive care populations.</AbstractText>
+        <AbstractText Label="METHODS">This synthetic retrospective cohort included adults with septic shock who received norepinephrine within six hours of intensive care admission. The peak norepinephrine-equivalent dose during the first 24 hours was grouped into low, intermediate and high categories. Outcomes were days alive and free of vasopressors, days of mechanical ventilation, renal replacement therapy, and the intensive care unit length of stay. Models adjusted for age, sex, admission source, chronic illness and the initial organ failure score.</AbstractText>
+        <AbstractText Label="RESULTS">Patients in the high-dose group were older and had higher lactate concentrations. They spent more days on vasopressors, more often needed renal replacement therapy, and stayed longer in the unit than patients in the low-dose group. Mean arterial pressure targets were reached later in the high-dose group, and fluid balance was more positive on the second day. The association between peak dose and length of stay persisted when patients who died early were excluded, and it was similar in medical and surgical admissions. Vasopressin was added more often at higher doses, but adding it did not change the association.</AbstractText>
+        <AbstractText Label="CONCLUSIONS">A high peak norepinephrine dose in the first day of septic shock marks patients who need prolonged organ support and a longer intensive care unit stay. Early dose trajectories may help to anticipate resource use and to plan discharge, although causal effects cannot be inferred from these observational data.</AbstractText>
+      </Abstract>
+      <AuthorList>
+        <Author><LastName>Abdi</LastName><Initials>F</Initials></Author>
+        <Author><LastName>Byrne</LastName><Initials>C</Initials></Author>
+        <Author><LastName>Chowdhury</LastName><Initials>R</Initials></Author>
+        <Author><LastName>Duarte</LastName><Initials>V</Initials></Author>
+      </AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000011</PMID>
+    <Article PubModel="Print">
+      <Journal><JournalIssue><PubDate><Year>2020</Year></PubDate></JournalIssue><ISOAbbreviation>Synth Thorac Imaging</ISOAbbreviation></Journal>
+      <ArticleTitle>Pleural effusion on bedside chest radiographs of ventilated patients.</ArticleTitle>
+      <Abstract><AbstractText>Bedside chest radiographs of mechanically ventilated adults were reviewed for pleural effusion. Effusions were common, often bilateral and associated with a positive fluid balance. Patients with a moderate or large effusion were weaned from the ventilator later and had a longer intensive care stay, although drainage did not shorten the stay.</AbstractText></Abstract>
+      <AuthorList><Author><LastName>Iyer</LastName><Initials>N</Initials></Author><Author><LastName>Walsh</LastName><Initials>D</Initials></Author></AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="In-Process" Owner="NLM">
+    <PMID Version="1">90000012</PMID>
+    <Article PubModel="Electronic">
+      <Journal><JournalIssue><PubDate><Season>Winter</Season></PubDate></JournalIssue><Title>Synthetic journal of neurocritical care</Title></Journal>
+      <ArticleTitle>The Glasgow Coma Scale in sedated patients: what does a low score mean?</ArticleTitle>
+      <Abstract><AbstractText>In sedated or intubated patients the verbal component of the Glasgow Coma Scale cannot be assessed, and a low total score may reflect sedation rather than brain injury. Interpreting the score together with the sedation level avoids overestimating neurological dysfunction and its link to a prolonged stay.</AbstractText></Abstract>
+      <AuthorList><Author><LastName>Moreau</LastName><Initials>J</Initials></Author></AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016454">Review</PublicationType></PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+  <PubmedData>
+    <History><PubMedPubDate PubStatus="pubmed"><Year>2024</Year><Month>2</Month><Day>1</Day></PubMedPubDate></History>
+  </PubmedData>
+</PubmedArticle>
+</PubmedArticleSet>

@@ -1,0 +1,6 @@
+# Binary test fixtures: never convert their line endings. A PDF's byte offsets must not change,
+# and Git cannot tell that a PDF without NUL bytes is binary.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary

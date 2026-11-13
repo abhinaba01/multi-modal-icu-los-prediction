@@ -1,0 +1,317 @@
+# Stage 5 PubMed searches (NCBI E-utilities). Loaded by fate_icu.rag.sources.pubmed.
+#
+# Every search is run as: (<term>) AND (<filters>), over publication dates min_year..max_year.
+# {icu} and {outcome} are replaced by the blocks below when the file is loaded, so the
+# saved search terms (raw/pubmed/esearch/*.json) are explicit text.
+#
+# Two kinds of search:
+#   topic   the Stage 5 topics: ICU length of stay, AKI, sepsis, ARDS, delirium,
+#           vasopressors, mechanical ventilation (each ANDed with the ICU block);
+#   driver  one search per driver key (configs/variables.yaml channels, the contract's
+#           static groups, the image concepts), ANDed with the ICU and outcome blocks, so
+#           every possible driver has prognostic literature. "keys" lists the driver keys
+#           ("modality:key") a search serves; tests/test_rag_pubmed.py checks that every
+#           key has one.
+#
+# Field tags: [MeSH] (or [mh]) = NLM's subject headings, exploded to narrower terms;
+# [tiab] = title or abstract words; [ti] = title only; [pt] = publication type;
+# [lang] = language. "*" truncates a word.
+
+version: 1
+min_year: 1990
+max_year: 2026
+
+# English, with an abstract; not animal-only or paediatric-only studies (records not yet
+# MeSH-indexed are kept); no comments, editorials, letters, news, errata, retractions or
+# expressions of concern (iter_documents also drops these by publication type).
+filters: >-
+  english[lang] AND hasabstract
+  AND NOT (animals[mh] NOT humans[mh])
+  AND NOT ((infant[mh] OR child[mh] OR adolescent[mh]) NOT adult[mh])
+  AND NOT (comment[pt] OR editorial[pt] OR letter[pt] OR news[pt] OR "newspaper article"[pt]
+  OR "published erratum"[pt] OR "retracted publication"[pt] OR "retraction of publication"[pt]
+  OR "expression of concern"[pt])
+
+blocks:
+  icu: >-
+    ("Intensive Care Units"[MeSH] OR "Critical Care"[MeSH] OR "Critical Illness"[MeSH]
+    OR "intensive care"[tiab] OR "critically ill"[tiab] OR "critical care"[tiab] OR ICU[tiab])
+  outcome: >-
+    ("Length of Stay"[MeSH] OR "length of stay"[tiab] OR mortality[tiab] OR prognos*[tiab]
+    OR outcome*[tiab])
+
+queries:
+  # --- topics (Stage 5) -----------------------------------------------------------------
+  - id: topic_length_of_stay
+    purpose: topic
+    term: >-
+      ("Length of Stay"[MeSH] OR "length of stay"[tiab] OR "ICU stay"[tiab] OR "prolonged stay"[tiab]
+      OR "prolonged ICU"[tiab]) AND {icu}
+  - id: topic_acute_kidney_injury
+    purpose: topic
+    term: >-
+      ("Acute Kidney Injury"[MeSH] OR "acute kidney injury"[tiab] OR "acute renal failure"[tiab]
+      OR "renal replacement therapy"[tiab]) AND {icu}
+  - id: topic_sepsis
+    purpose: topic
+    term: >-
+      ("Sepsis"[MeSH] OR "Shock, Septic"[MeSH] OR sepsis[tiab] OR septic[tiab]) AND {icu}
+  - id: topic_ards
+    purpose: topic
+    term: >-
+      ("Respiratory Distress Syndrome"[MeSH] OR "acute respiratory distress syndrome"[tiab]
+      OR ARDS[tiab] OR "acute lung injury"[tiab]) AND {icu}
+  - id: topic_delirium
+    purpose: topic
+    term: >-
+      ("Delirium"[MeSH] OR delirium[tiab] OR "Hypnotics and Sedatives"[MeSH] OR sedation[tiab]) AND {icu}
+  - id: topic_vasopressors
+    purpose: topic
+    term: >-
+      ("Vasoconstrictor Agents"[MeSH] OR vasopressor*[tiab] OR norepinephrine[tiab] OR noradrenaline[tiab]
+      OR vasopressin[tiab]) AND {icu}
+  - id: topic_mechanical_ventilation
+    purpose: topic
+    term: >-
+      ("Respiration, Artificial"[MeSH] OR "Ventilator Weaning"[MeSH] OR "mechanical ventilation"[tiab]
+      OR "mechanically ventilated"[tiab] OR extubation[tiab]) AND {icu}
+
+  # --- drivers: vital signs ---------------------------------------------------------------
+  - id: driver_heart_rate
+    purpose: driver
+    keys: ["timeseries:heart_rate"]
+    term: >-
+      ("Heart Rate"[MeSH] OR "heart rate"[tiab] OR tachycardia[tiab] OR bradycardia[tiab]) AND {icu} AND {outcome}
+  - id: driver_blood_pressure
+    purpose: driver
+    keys: ["timeseries:sbp", "timeseries:dbp", "timeseries:mbp"]
+    term: >-
+      ("Hypotension"[MeSH] OR hypotension[tiab] OR "blood pressure"[tiab] OR "arterial pressure"[tiab]
+      OR "mean arterial pressure"[tiab] OR "systolic pressure"[tiab] OR "diastolic pressure"[tiab])
+      AND {icu} AND {outcome}
+  - id: driver_respiratory_rate
+    purpose: driver
+    keys: ["timeseries:resp_rate"]
+    term: >-
+      ("Respiratory Rate"[MeSH] OR "respiratory rate"[tiab] OR tachypnea[tiab] OR tachypnoea[tiab])
+      AND {icu} AND {outcome}
+  - id: driver_oxygen_saturation
+    purpose: driver
+    keys: ["timeseries:spo2"]
+    term: >-
+      ("oxygen saturation"[tiab] OR SpO2[tiab] OR "pulse oximetry"[tiab] OR hypoxemia[tiab] OR hypoxaemia[tiab])
+      AND {icu} AND {outcome}
+  - id: driver_temperature
+    purpose: driver
+    keys: ["timeseries:temperature"]
+    term: >-
+      ("Body Temperature"[MeSH] OR "body temperature"[tiab] OR fever[tiab] OR hyperthermia[tiab]
+      OR hypothermia[tiab]) AND {icu} AND {outcome}
+  - id: driver_glasgow_coma_scale
+    purpose: driver
+    keys: ["timeseries:gcs"]
+    term: >-
+      ("Glasgow Coma Scale"[MeSH] OR "Glasgow Coma Scale"[tiab] OR "level of consciousness"[tiab]
+      OR "altered mental status"[tiab] OR coma[tiab]) AND {icu} AND {outcome}
+
+  # --- drivers: respiratory and blood gases --------------------------------------------
+  - id: driver_oxygenation
+    purpose: driver
+    keys: ["timeseries:fio2", "timeseries:pao2"]
+    term: >-
+      (FiO2[tiab] OR "inspired oxygen"[tiab] OR PaO2[tiab] OR "PaO2/FiO2"[tiab] OR "arterial oxygen"[tiab]
+      OR "oxygenation index"[tiab] OR hyperoxia[tiab] OR hyperoxemia[tiab]) AND {icu} AND {outcome}
+  - id: driver_carbon_dioxide
+    purpose: driver
+    keys: ["timeseries:paco2"]
+    term: >-
+      (PaCO2[tiab] OR hypercapnia[tiab] OR hypercapnic[tiab] OR hypercarbia[tiab] OR hypocapnia[tiab])
+      AND {icu} AND {outcome}
+  - id: driver_acid_base
+    purpose: driver
+    keys: ["timeseries:ph"]
+    term: >-
+      ("Acid-Base Imbalance"[MeSH] OR acidosis[tiab] OR acidemia[tiab] OR acidaemia[tiab] OR alkalosis[tiab]
+      OR "blood pH"[tiab] OR "arterial pH"[tiab]) AND {icu} AND {outcome}
+
+  # --- drivers: laboratory results -------------------------------------------------------
+  - id: driver_creatinine
+    purpose: driver
+    keys: ["timeseries:creatinine"]
+    term: >-
+      ("Creatinine"[MeSH] OR creatinine[tiab]) AND {icu} AND {outcome}
+  - id: driver_urea
+    purpose: driver
+    keys: ["timeseries:bun"]
+    term: >-
+      ("Blood Urea Nitrogen"[MeSH] OR "blood urea nitrogen"[tiab] OR "serum urea"[tiab] OR uremia[tiab]
+      OR uraemia[tiab] OR azotemia[tiab]) AND {icu} AND {outcome}
+  - id: driver_bilirubin
+    purpose: driver
+    keys: ["timeseries:bilirubin"]
+    term: >-
+      ("Bilirubin"[MeSH] OR bilirubin[tiab] OR hyperbilirubinemia[tiab] OR hyperbilirubinaemia[tiab]
+      OR jaundice[tiab] OR "liver dysfunction"[tiab]) AND {icu} AND {outcome}
+  - id: driver_platelets
+    purpose: driver
+    keys: ["timeseries:platelets"]
+    term: >-
+      ("Thrombocytopenia"[MeSH] OR thrombocytopenia[tiab] OR "platelet count"[tiab]) AND {icu} AND {outcome}
+  - id: driver_white_cells
+    purpose: driver
+    keys: ["timeseries:wbc"]
+    term: >-
+      ("Leukocyte Count"[MeSH] OR leukocytosis[tiab] OR leukopenia[tiab] OR "white blood cell"[tiab]
+      OR "white cell count"[tiab]) AND {icu} AND {outcome}
+  - id: driver_lactate
+    purpose: driver
+    keys: ["timeseries:lactate"]
+    term: >-
+      ("Lactic Acid"[MeSH] OR lactate[tiab] OR hyperlactatemia[tiab] OR hyperlactataemia[tiab]
+      OR "lactic acidosis"[tiab]) AND {icu} AND {outcome}
+  - id: driver_glucose
+    purpose: driver
+    keys: ["timeseries:glucose"]
+    term: >-
+      ("Blood Glucose"[MeSH] OR hyperglycemia[tiab] OR hyperglycaemia[tiab] OR hypoglycemia[tiab]
+      OR hypoglycaemia[tiab] OR "glycemic control"[tiab] OR "glycaemic control"[tiab]) AND {icu} AND {outcome}
+  - id: driver_sodium
+    purpose: driver
+    keys: ["timeseries:sodium"]
+    term: >-
+      (hyponatremia[tiab] OR hyponatraemia[tiab] OR hypernatremia[tiab] OR hypernatraemia[tiab]
+      OR dysnatremia[tiab] OR dysnatraemia[tiab] OR "serum sodium"[tiab]) AND {icu} AND {outcome}
+  - id: driver_potassium
+    purpose: driver
+    keys: ["timeseries:potassium"]
+    term: >-
+      (hyperkalemia[tiab] OR hyperkalaemia[tiab] OR hypokalemia[tiab] OR hypokalaemia[tiab]
+      OR "serum potassium"[tiab]) AND {icu} AND {outcome}
+  - id: driver_haemoglobin
+    purpose: driver
+    keys: ["timeseries:haemoglobin"]
+    term: >-
+      ("Anemia"[MeSH] OR "Erythrocyte Transfusion"[MeSH] OR anemia[tiab] OR anaemia[tiab] OR hemoglobin[tiab]
+      OR haemoglobin[tiab]) AND {icu} AND {outcome}
+
+  # --- drivers: urine output and vasopressors --------------------------------------------
+  - id: driver_urine_output
+    purpose: driver
+    keys: ["timeseries:urine_output"]
+    term: >-
+      ("Oliguria"[MeSH] OR oliguria[tiab] OR "urine output"[tiab] OR anuria[tiab]) AND {icu} AND {outcome}
+  - id: driver_vasopressor_dose
+    purpose: driver
+    keys: ["timeseries:ne_dose"]
+    term: >-
+      ("Vasoconstrictor Agents"[MeSH] OR vasopressor*[tiab] OR norepinephrine[tiab] OR noradrenaline[tiab]
+      OR catecholamine*[tiab]) AND {icu} AND {outcome}
+
+  # --- drivers: SOFA (hourly components and the static SOFA groups) ---------------------
+  - id: driver_sofa_score
+    purpose: driver
+    keys:
+      - "timeseries:sofa_respiration"
+      - "timeseries:sofa_coagulation"
+      - "timeseries:sofa_liver"
+      - "timeseries:sofa_cardiovascular"
+      - "timeseries:sofa_cns"
+      - "timeseries:sofa_renal"
+      - "static:sofa_static"
+      - "static:sofa_trajectory"
+    term: >-
+      ("Organ Dysfunction Scores"[MeSH] OR SOFA[tiab] OR "sequential organ failure assessment"[tiab])
+      AND {icu} AND {outcome}
+  - id: driver_organ_failure
+    purpose: driver
+    keys: ["static:sofa_onset", "static:sofa_interactions", "static:sofa_trajectory"]
+    term: >-
+      ("Multiple Organ Failure"[MeSH] OR "multiple organ dysfunction"[tiab] OR "multiple organ failure"[tiab]
+      OR "multiorgan failure"[tiab] OR "organ failure"[tiab] OR "organ dysfunction"[tiab]) AND {icu} AND {outcome}
+
+  # --- drivers: other static groups ---------------------------------------------------------
+  - id: driver_admission
+    purpose: driver
+    keys: ["static:admission"]
+    term: >-
+      ("Patient Admission"[MeSH] OR "Patient Transfer"[MeSH] OR "admission source"[tiab]
+      OR "emergency admission"[tiab] OR "unplanned admission"[tiab] OR "elective surgery"[tiab]
+      OR "type of admission"[tiab]) AND {icu} AND {outcome}
+  - id: driver_demographics
+    purpose: driver
+    keys: ["static:demographics"]
+    term: >-
+      ("Aged, 80 and over"[MeSH] OR "Sex Factors"[MeSH] OR "elderly patients"[tiab] OR "older patients"[tiab]
+      OR octogenarian*[tiab] OR "very elderly"[tiab] OR age[ti] OR "sex differences"[tiab]
+      OR "gender differences"[tiab]) AND {icu} AND {outcome}
+  - id: driver_vital_signs
+    purpose: driver
+    keys: ["static:vitals"]
+    term: >-
+      ("Vital Signs"[MeSH] OR "vital signs"[tiab] OR "early warning score"[tiab]
+      OR "physiological deterioration"[tiab]) AND {icu} AND {outcome}
+  - id: driver_laboratory_results
+    purpose: driver
+    keys: ["static:labs"]
+    term: >-
+      ("laboratory tests"[tiab] OR "laboratory values"[tiab] OR "laboratory parameters"[tiab]
+      OR "routine blood tests"[tiab] OR "laboratory abnormalities"[tiab]) AND {icu} AND {outcome}
+
+  # --- drivers: chest radiograph ---------------------------------------------------------------
+  - id: driver_chest_radiograph
+    purpose: driver
+    keys: ["image:whole_image"]
+    term: >-
+      ("Radiography, Thoracic"[MeSH] OR "chest radiograph*"[tiab] OR "chest x-ray*"[tiab] OR "chest film*"[tiab])
+      AND {icu} AND {outcome}
+  - id: driver_atelectasis
+    purpose: driver
+    keys: ["image:Atelectasis"]
+    term: >-
+      ("Pulmonary Atelectasis"[MeSH] OR atelectasis[tiab]) AND {icu} AND {outcome}
+  - id: driver_pneumonia_opacity
+    purpose: driver
+    keys: ["image:Pneumonia", "image:Consolidation", "image:Lung Opacity"]
+    term: >-
+      ("Pneumonia"[MeSH] OR pneumonia[tiab] OR "lung consolidation"[tiab] OR "pulmonary consolidation"[tiab]
+      OR "pulmonary infiltrate*"[tiab] OR "lung opacit*"[tiab] OR "pulmonary opacit*"[tiab]) AND {icu} AND {outcome}
+  - id: driver_pneumothorax
+    purpose: driver
+    keys: ["image:Pneumothorax"]
+    term: >-
+      ("Pneumothorax"[MeSH] OR pneumothorax[tiab] OR barotrauma[tiab]) AND {icu} AND {outcome}
+  - id: driver_pulmonary_edema
+    purpose: driver
+    keys: ["image:Edema"]
+    term: >-
+      ("Pulmonary Edema"[MeSH] OR "pulmonary edema"[tiab] OR "pulmonary oedema"[tiab] OR "fluid overload"[tiab]
+      OR "extravascular lung water"[tiab]) AND {icu} AND {outcome}
+  - id: driver_pleural_effusion
+    purpose: driver
+    keys: ["image:Effusion"]
+    term: >-
+      ("Pleural Effusion"[MeSH] OR "pleural effusion*"[tiab]) AND {icu} AND {outcome}
+  - id: driver_cardiomegaly
+    purpose: driver
+    keys: ["image:Cardiomegaly"]
+    term: >-
+      ("Cardiomegaly"[MeSH] OR cardiomegaly[tiab] OR "cardiothoracic ratio"[tiab] OR "heart failure"[ti])
+      AND {icu} AND {outcome}
+  - id: driver_lung_lesion
+    purpose: driver
+    keys: ["image:Lung Lesion"]
+    term: >-
+      ("Lung Neoplasms"[MeSH] OR "lung lesion*"[tiab] OR "pulmonary nodule*"[tiab] OR "lung mass"[tiab]
+      OR "pulmonary mass"[tiab]) AND {icu} AND {outcome}
+  - id: driver_fracture
+    purpose: driver
+    keys: ["image:Fracture"]
+    term: >-
+      ("Rib Fractures"[MeSH] OR "Thoracic Injuries"[MeSH] OR "rib fracture*"[tiab] OR "chest trauma"[tiab]
+      OR "thoracic trauma"[tiab] OR "clavicle fracture*"[tiab]) AND {icu} AND {outcome}
+  - id: driver_mediastinum
+    purpose: driver
+    keys: ["image:Enlarged Cardiomediastinum"]
+    term: >-
+      ("Mediastinal Diseases"[MeSH] OR "widened mediastinum"[tiab] OR "mediastinal widening"[tiab]
+      OR "pericardial effusion"[tiab] OR "aortic dissection"[tiab]) AND {icu} AND {outcome}

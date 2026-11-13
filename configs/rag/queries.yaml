@@ -1,0 +1,128 @@
+# Stage 5 retrieval queries. Loaded by fate_icu.rag.queries.load_query_spec().
+#
+# One fixed template, applied to every driver key (fate_icu.rag.drivers.driver_keys():
+# the 30 channels of configs/variables.yaml, the 8 static groups of the contract's
+# fate_static set, the 11 image concepts and the whole image) in both directions:
+# 100 queries. A query never contains a patient value: labels are fixed text, checked to
+# hold no numbers, percentages or units.
+#
+# Each label starts from its source label (variables.yaml, the contract's feature groups,
+# or the image concept name). A label that differs from its source must give a reason.
+
+version: 1
+template: "{label} associated with {direction} intensive care unit length of stay"
+directions: [longer, shorter]
+image_model: densenet121-res224-chex
+
+labels:
+  timeseries:
+    heart_rate: {label: heart rate}
+    sbp: {label: systolic blood pressure}
+    dbp: {label: diastolic blood pressure}
+    mbp: {label: mean arterial pressure}
+    resp_rate: {label: respiratory rate}
+    spo2: {label: oxygen saturation (SpO2)}
+    temperature: {label: body temperature}
+    gcs:
+      label: Glasgow Coma Scale score
+      reason: "'total' describes our channel; the literature speaks of the Glasgow Coma Scale score"
+    fio2: {label: inspired oxygen fraction (FiO2)}
+    pao2: {label: arterial oxygen tension (PaO2)}
+    paco2: {label: arterial carbon dioxide tension (PaCO2)}
+    ph: {label: blood pH}
+    creatinine: {label: serum creatinine}
+    bun: {label: blood urea nitrogen}
+    bilirubin: {label: total bilirubin}
+    platelets: {label: platelet count}
+    wbc: {label: white blood cell count}
+    lactate: {label: lactate}
+    glucose: {label: blood glucose}
+    sodium: {label: serum sodium}
+    potassium: {label: serum potassium}
+    haemoglobin:
+      label: hemoglobin
+      reason: "US spelling, as in most PubMed abstracts; BM25 does not match haemoglobin to hemoglobin"
+    urine_output: {label: urine output}
+    ne_dose: {label: vasopressor dose (norepinephrine equivalent)}
+    sofa_respiration:
+      label: respiratory SOFA score
+      reason: "'sub-score (hourly)' describes our data, not the clinical concept"
+    sofa_coagulation:
+      label: coagulation SOFA score
+      reason: "'sub-score (hourly)' describes our data, not the clinical concept"
+    sofa_liver:
+      label: liver SOFA score
+      reason: "'sub-score (hourly)' describes our data, not the clinical concept"
+    sofa_cardiovascular:
+      label: cardiovascular SOFA score
+      reason: "'sub-score (hourly)' describes our data, not the clinical concept"
+    sofa_cns:
+      label: neurological (CNS) SOFA score
+      reason: "'sub-score (hourly)' describes our data, not the clinical concept"
+    sofa_renal:
+      label: renal SOFA score
+      reason: "'sub-score (hourly)' describes our data, not the clinical concept"
+
+  static:
+    admission:
+      label: type and source of intensive care admission
+      reason: "the group holds the care unit, admission type and admission source; 'admission details' is too vague to retrieve on"
+    demographics:
+      label: patient age and sex
+      reason: "the group holds age and sex"
+    vitals:
+      label: vital signs in the first day of intensive care
+      reason: "queries hold no numbers, so the '24 h' window is written out"
+    labs:
+      label: laboratory results in the first day of intensive care
+      reason: "queries hold no numbers, so the '24 h' window is written out"
+    sofa_static:
+      label: SOFA score in the first day of intensive care
+      reason: "queries hold no numbers, so the '24 h' window is written out"
+    sofa_trajectory:
+      label: change in SOFA score over the first day of intensive care
+      reason: "queries hold no numbers; the clinical concept is the change in SOFA score"
+    sofa_onset:
+      label: timing and order of organ dysfunction onset
+      reason: "the group also records when each organ's dysfunction starts"
+    sofa_interactions:
+      label: combined dysfunction of several organs
+      reason: "the group multiplies pairs of organ sub-scores; 'interaction terms' is model language"
+
+  image:
+    Atelectasis:
+      label: atelectasis on chest radiograph
+      reason: "radiology phrasing for an image finding"
+    Consolidation:
+      label: lung consolidation on chest radiograph
+      reason: "radiology phrasing for an image finding"
+    Pneumothorax:
+      label: pneumothorax on chest radiograph
+      reason: "radiology phrasing for an image finding"
+    Edema:
+      label: pulmonary edema on chest radiograph
+      reason: "radiology phrasing for an image finding; the CheXpert label means pulmonary edema"
+    Effusion:
+      label: pleural effusion on chest radiograph
+      reason: "radiology phrasing for an image finding; the CheXpert label means pleural effusion"
+    Pneumonia:
+      label: pneumonia on chest radiograph
+      reason: "radiology phrasing for an image finding"
+    Cardiomegaly:
+      label: cardiomegaly on chest radiograph
+      reason: "radiology phrasing for an image finding"
+    Lung Lesion:
+      label: lung lesion on chest radiograph
+      reason: "radiology phrasing for an image finding"
+    Fracture:
+      label: rib fracture on chest radiograph
+      reason: "the CheXpert label is a fracture seen on a chest film, most often of the ribs"
+    Lung Opacity:
+      label: lung opacity on chest radiograph
+      reason: "radiology phrasing for an image finding"
+    Enlarged Cardiomediastinum:
+      label: enlarged cardiomediastinum on chest radiograph
+      reason: "radiology phrasing for an image finding"
+    whole_image:
+      label: chest radiograph findings
+      reason: "the whole image as one evidence unit"

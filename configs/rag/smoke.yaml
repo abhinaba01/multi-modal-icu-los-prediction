@@ -1,0 +1,49 @@
+# Stage 5 smoke run: laptop CPU, offline, minutes. Every source is a synthetic fixture
+# under tests/fixtures/rag/ (no NCBI or StatPearls download). The models are the real MedCPT
+# models at their pinned revisions (about 1.3 GB in the Hugging Face cache, downloaded once).
+# Never use these numbers in results: smoke configs only prove the code runs.
+run_name: rag_smoke
+require_outside_onedrive: false   # a few MB
+
+sources:
+  pubmed:
+    fixtures: tests/fixtures/rag/pubmed
+  statpearls:
+    fixtures: tests/fixtures/rag/statpearls
+  guidelines:
+    dir: tests/fixtures/rag/guidelines
+    items:
+      - id: fixture_guideline
+        title: "Synthetic guideline used by the tests"
+        citation: "FaTE-ICU test fixture (synthetic text). 2026."
+        url: "https://example.org/fate-icu/fixture-guideline"
+        file: fixture_guideline.pdf
+        licence: "synthetic test fixture"
+        year: 2026
+
+chunking:
+  max_tokens: 300
+  min_tokens: 5
+  counter: medcpt          # the MedCPT article encoder's tokenizer
+
+embedding:
+  batch_size: 16
+  max_length: 512
+  shard_size: 50000
+  autocast_fp16: false
+
+retrieval:
+  depth: 50
+  rrf_k: 60
+  rerank_depth: 5          # 100 queries x 5 pairs: the CPU reranks about 2 pairs a second
+  top_k: 3
+  store_depth: 5
+  cpu_check_queries: 2
+
+evaluation:
+  direction: longer
+  pool_depth: 5
+  seed: 666
+
+smoke_packets: tests/fixtures/rag/packets
+seed: 666

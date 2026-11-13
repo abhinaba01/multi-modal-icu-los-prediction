@@ -43,6 +43,10 @@ TRACKED_PACKAGES = (
     "captum",
     "faiss-cpu",
     "bm25s",
+    "pystemmer",
+    "tokenizers",
+    "huggingface-hub",
+    "pypdf",
 )
 
 

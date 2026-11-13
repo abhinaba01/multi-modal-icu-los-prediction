@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic StatPearls-style article written for the FaTE-ICU tests: invented text. -->
+<book-part-wrapper xmlns:xlink="http://www.w3.org/1999/xlink">
+  <book-part book-part-type="chapter" id="article-90003">
+    <book-part-meta>
+      <book-part-id book-part-id-type="pmcid">NBK900003</book-part-id>
+      <title-group><title>Septic Shock</title></title-group>
+      <contrib-group><contrib contrib-type="author"><name><surname>Haddad</surname><given-names>Samir</given-names></name></contrib></contrib-group>
+      <pub-history><date date-type="updated"><year>2023</year></date></pub-history>
+      <permissions><license license-type="open-access" xlink:href="https://creativecommons.org/licenses/by-nc-nd/4.0/"><license-p>CC BY-NC-ND 4.0.</license-p></license></permissions>
+    </book-part-meta>
+    <body>
+      <sec><title>Introduction</title>
+        <p>Septic shock is sepsis with persistent hypotension that needs vasopressors to keep the mean arterial pressure at or above 65 mmHg, together with a raised serum lactate despite adequate fluids.</p>
+      </sec>
+      <sec><title>Treatment / Management</title>
+        <p>Norepinephrine is the first-line vasopressor. Vasopressin may be added when the norepinephrine dose rises. Patients who need high vasopressor doses on the first day stay longer in intensive care.</p>
+      </sec>
+      <sec><title>Disclosure</title><p>Disclosure text that must be skipped.</p></sec>
+    </body>
+  </book-part>
+</book-part-wrapper>

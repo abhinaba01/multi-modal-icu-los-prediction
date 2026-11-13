@@ -1,0 +1,76 @@
+# Stage 5 full build: public data only. The laptop fetches, parses, chunks and builds BM25
+# and the query bank; a Kaggle or Colab GPU computes the passage embeddings
+# (docs/lab_runbook.md, Stage 5). The finished index is copied to the lab.
+run_name: rag_full
+require_outside_onedrive: true    # several GB: FATE_RAG_DIR must be outside OneDrive
+
+sources:
+  pubmed:
+    queries: configs/rag/pubmed_queries.yaml
+    batch_size: 200
+    max_workers: 3                # threads share NCBI's limit: 3 requests/s, 10 with NCBI_API_KEY
+  statpearls:
+    url: https://ftp.ncbi.nlm.nih.gov/pub/litarch/3d/12/statpearls_NBK430685.tar.gz
+    expected_size: 2047364463     # bytes; Last-Modified 2026-11-08, checked 2026-11-10
+  guidelines:
+    # PDFs you download into <FATE_RAG_DIR>/raw/guidelines/ under these file names.
+    # Check each citation against the PDF, and replace every "TO CONFIRM" licence with the
+    # licence stated on the publisher's page: the build stops while one is unconfirmed.
+    items:
+      - id: ssc2021
+        title: "Surviving Sepsis Campaign: international guidelines for management of sepsis and septic shock 2021"
+        citation: "Evans L, Rhodes A, Alhazzani W, et al. Intensive Care Med. 2021;47(11):1181-1247."
+        url: "https://doi.org/10.1007/s00134-021-06506-y"
+        file: ssc2021.pdf
+        licence: "TO CONFIRM: see the article page"
+        year: 2021
+      - id: kdigo_aki_2012
+        title: "KDIGO Clinical Practice Guideline for Acute Kidney Injury"
+        citation: "KDIGO Acute Kidney Injury Work Group. Kidney Int Suppl. 2012;2(1):1-138."
+        url: "https://kdigo.org/guidelines/acute-kidney-injury/"
+        file: kdigo_aki_2012.pdf
+        licence: "TO CONFIRM: see kdigo.org"
+        year: 2012
+      - id: esicm_ards_2023
+        title: "ESICM guidelines on acute respiratory distress syndrome: definition, phenotyping and respiratory support strategies"
+        citation: "Grasselli G, Calfee CS, Camporota L, et al. Intensive Care Med. 2023;49(7):727-759."
+        url: "https://doi.org/10.1007/s00134-023-07050-7"
+        file: esicm_ards_2023.pdf
+        licence: "TO CONFIRM: see the article page"
+        year: 2023
+      - id: padis_2018
+        title: "Clinical practice guidelines for the prevention and management of pain, agitation/sedation, delirium, immobility, and sleep disruption in adult patients in the ICU"
+        citation: "Devlin JW, Skrobik Y, Gelinas C, et al. Crit Care Med. 2018;46(9):e825-e873."
+        url: "https://doi.org/10.1097/CCM.0000000000003299"
+        file: padis_2018.pdf
+        licence: "TO CONFIRM: see the article page"
+        year: 2018
+
+chunking:
+  max_tokens: 300
+  min_tokens: 5
+  counter: medcpt
+
+embedding:
+  batch_size: 128
+  max_length: 512
+  shard_size: 50000
+  autocast_fp16: false            # fp32 as in MedCPT's own usage; about 1-2 h on a T4
+
+retrieval:
+  depth: 50
+  rrf_k: 60
+  rerank_depth: 50
+  top_k: 3
+  store_depth: 10
+  cpu_check_queries: 2            # GPU reranks recomputed on the laptop CPU (about a minute)
+
+evaluation:
+  direction: longer               # the 50 "longer" queries are labelled
+  pool_depth: 5
+  n_boot: 1000
+  n_perm: 10000
+  seed: 666
+  labels: configs/rag/relevance_labels.tsv
+
+seed: 666

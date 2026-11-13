@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic StatPearls-style article written for the FaTE-ICU tests: invented text.
+     A default namespace, no article NBK id, no licence, four authors, a list inside a
+     paragraph, boxed text and paragraphs before the first section. -->
+<book-part-wrapper xmlns="http://example.org/synthetic-bits" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <book-part book-part-type="chapter" id="article-90002">
+    <book-part-meta>
+      <title-group><title>Acute Kidney Injury</title></title-group>
+      <contrib-group>
+        <contrib contrib-type="author"><name><surname>Achebe</surname><given-names>Ngozi</given-names></name></contrib>
+        <contrib contrib-type="author"><name><surname>Berg</surname><given-names>Lars-Erik</given-names></name></contrib>
+        <contrib contrib-type="author"><name><surname>Costa</surname><given-names>Rui</given-names></name></contrib>
+        <contrib contrib-type="author"><name><surname>Dubois</surname><given-names>Claire</given-names></name></contrib>
+      </contrib-group>
+      <pub-date><year>2024</year></pub-date>
+    </book-part-meta>
+    <body>
+      <p>Acute kidney injury is a sudden fall in kidney function over hours to days.</p>
+      <sec><title>Evaluation</title>
+        <p>Staging uses serum creatinine and urine output:<list list-type="order"><list-item><p>Stage 1: creatinine 1.5 to 1.9 times baseline.</p></list-item><list-item><p>Stage 3: creatinine three times baseline, or renal replacement therapy.</p></list-item></list></p>
+        <boxed-text><title>Key point</title><p>Oliguria lasting more than 12 hours suggests a severe injury.</p></boxed-text>
+      </sec>
+      <sec><title>Prognosis</title>
+        <p>Patients with acute kidney injury in intensive care stay longer and have a higher mortality.</p>
+      </sec>
+      <sec><title>References</title><p>Should be skipped.</p></sec>
+    </body>
+  </book-part>
+</book-part-wrapper>

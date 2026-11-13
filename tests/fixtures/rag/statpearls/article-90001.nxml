@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE book-part-wrapper PUBLIC "-//NLM//DTD BITS Book Interchange DTD v2.0 20151225//EN" "BITS-book2.dtd">
+<!-- Synthetic StatPearls-style article written for the FaTE-ICU tests: invented text. -->
+<book-part-wrapper xmlns:xlink="http://www.w3.org/1999/xlink" dtd-version="2.0">
+  <book-meta>
+    <book-id book-id-type="pmcid">NBK430685</book-id>
+    <book-title-group><book-title>StatPearls</book-title></book-title-group>
+    <contrib-group><contrib contrib-type="editor"><name><surname>Editor</surname><given-names>Book</given-names></name></contrib></contrib-group>
+  </book-meta>
+  <book-part book-part-type="chapter" id="article-90001">
+    <book-part-meta>
+      <book-part-id book-part-id-type="pmcid">NBK900001</book-part-id>
+      <title-group><title>Lactic Acidosis</title></title-group>
+      <contrib-group>
+        <contrib contrib-type="author"><name><surname>Varga</surname><given-names>Eszter Anna</given-names></name></contrib>
+        <contrib contrib-type="author"><name><surname>Osei</surname><given-names>Kwame</given-names></name></contrib>
+      </contrib-group>
+      <pub-history>
+        <date date-type="created"><day>12</day><month>3</month><year>2019</year></date>
+        <date date-type="updated"><day>4</day><month>6</month><year>2025</year></date>
+      </pub-history>
+      <permissions>
+        <copyright-statement>Copyright 2025, StatPearls Publishing LLC.</copyright-statement>
+        <copyright-year>2025</copyright-year>
+        <license license-type="open-access" xlink:href="https://creativecommons.org/licenses/by-nc-nd/4.0/"><license-p>This book is distributed under the terms of the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International licence.</license-p></license>
+      </permissions>
+    </book-part-meta>
+    <body>
+      <sec id="s1"><title>Continuing Education Activity</title>
+        <p>Boilerplate learning objectives that must be skipped.</p>
+        <list list-type="bullet"><list-item><p>Objective one, also skipped.</p></list-item></list>
+      </sec>
+      <sec id="s2"><title>Introduction</title>
+        <p>Lactic acidosis is a raised blood lactate with a low blood pH.<xref ref-type="bibr" rid="b1">[1]</xref> In critically ill adults it most often reflects inadequate oxygen delivery to tissues.<xref ref-type="bibr" rid="b2">[2]</xref><xref ref-type="bibr" rid="b3">[3]</xref></p>
+        <p>Its severity is usually graded by the lactate concentration in <italic>mmol/L</italic>.</p>
+      </sec>
+      <sec id="s3"><title>Etiology</title>
+        <p>Causes are grouped as follows:</p>
+        <list list-type="bullet">
+          <list-item><p>Type A: tissue hypoperfusion, as in septic or cardiogenic shock.</p></list-item>
+          <list-item><p>Type B: impaired lactate clearance, as in liver failure or with some drugs.</p></list-item>
+        </list>
+        <fig id="f1"><label>Figure 1</label><caption><p>A synthetic figure caption that must be skipped.</p></caption><graphic xlink:href="fig1.jpg"/></fig>
+        <table-wrap id="t1"><label>Table 1</label><caption><p>A synthetic table caption.</p></caption><table><tr><td>cell text to skip</td></tr></table></table-wrap>
+      </sec>
+      <sec id="s4"><title>Treatment / Management</title>
+        <p>Treatment targets the cause and restores perfusion.<xref ref-type="bibr" rid="b4">[4]</xref></p>
+        <sec id="s4a"><title>Fluids and Vasopressors</title>
+          <p>Fluids are given first; vasopressors are added when hypotension persists ( <xref ref-type="bibr" rid="b5">5</xref> ).</p>
+        </sec>
+      </sec>
+      <sec id="s5"><title>Review Questions</title><p>Quiz links that must be skipped.</p></sec>
+    </body>
+    <back><ref-list><title>References</title><ref id="b1"><mixed-citation>Synthetic reference one.</mixed-citation></ref></ref-list></back>
+  </book-part>
+</book-part-wrapper>

@@ -241,3 +241,118 @@ that happens, repeat step 1.3, then this step.
    - the date alignment;
    - `images_to_download`.
 2. The JSON printed by `cache`.
+
+---
+
+## Stage 5: RAG index (public data; laptop, then a Kaggle or Colab GPU, then the lab)
+
+Stage 5 uses only public text, so it is built on the laptop now. A Kaggle or Colab GPU runs
+the model-heavy step. The lab only receives the finished index and checks it.
+
+### Prerequisites (laptop)
+
+- In `.env`:
+  - `FATE_RAG_DIR=D:\fate-data\rag`, or any folder outside OneDrive with about 10 GB free;
+  - `NCBI_EMAIL=<your email>`: NCBI's usage policy asks for it, and it is sent only to NCBI;
+  - optionally `NCBI_API_KEY=<key>`, free from your NCBI account (Account settings > API Key
+    Management); it makes the download about 3 times faster.
+- Download the four guideline PDFs into `<FATE_RAG_DIR>\raw\guidelines\` under these names:
+
+  | File | Guideline |
+  |---|---|
+  | `ssc2021.pdf` | Surviving Sepsis Campaign 2021 (Evans et al., Intensive Care Med 2021) |
+  | `kdigo_aki_2012.pdf` | KDIGO Clinical Practice Guideline for Acute Kidney Injury (2012) |
+  | `esicm_ards_2023.pdf` | ESICM guidelines on ARDS (Grasselli et al., Intensive Care Med 2023) |
+  | `padis_2018.pdf` | PADIS guideline (Devlin et al., Crit Care Med 2018) |
+
+  Then, in `configs/rag/full.yaml`, replace each "TO CONFIRM" licence with the licence shown
+  on the publisher's page, and check each citation against its PDF.
+- The MedCPT models (about 1.3 GB) are already in the laptop's Hugging Face cache.
+
+### 5.1 Download StatPearls and PubMed (laptop; each about 30-60 min; both resume)
+
+```
+uv run python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source statpearls --check-size
+uv run python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source statpearls
+uv run python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source pubmed
+```
+
+If the size check fails, NCBI has updated StatPearls. Review the change, then set
+`sources.statpearls.expected_size` in the config.
+
+### 5.2 Corpus, BM25 and the GPU bundle (laptop, about 20-40 min)
+
+```
+uv run python -I -m fate_icu.rag.build_corpus --config configs/rag/full.yaml
+uv run python -m fate_icu.rag.build_index --config configs/rag/full.yaml --part bm25
+uv run python -m fate_icu.rag.gpu_bundle --config configs/rag/full.yaml
+```
+
+`gpu_bundle` writes four files into `<FATE_RAG_DIR>\rag_full\gpu_bundle\` and prints the
+three notebook commands:
+- the code as a wheel;
+- `passages.parquet`;
+- `gpu_spec.json`;
+- `bm25_hits.json`.
+
+### 5.3 The GPU step on Kaggle (about 1-2 h on a T4)
+
+1. Kaggle: Create > New Dataset. Upload the four bundle files, keep the dataset private, and
+   note its name.
+2. Create > New Notebook. In the right-hand panel:
+   - Accelerator: GPU T4 or P100;
+   - Internet: on (this needs a phone-verified account);
+   - Add Input: your dataset.
+3. Run the three printed commands, each in its own cell with a leading `!`. Replace
+   `<your-dataset-name>` with your dataset's name.
+4. Save Version > Save & Run All (Commit), so it runs without the browser open. When it has
+   finished, open the version's Output tab and download the `gpu_out` folder.
+5. Put it at `<FATE_RAG_DIR>\rag_full\index\<version>\gpu_out\`. The version is printed by
+   `build_index` and `gpu_bundle`.
+
+**Colab instead of Kaggle:**
+1. Upload the four files to Google Drive.
+2. Choose Runtime > Change runtime type > T4 GPU, and mount Drive.
+3. Run the same commands with your Drive paths, and `--out /content/drive/MyDrive/fate-icu/gpu_out`.
+
+### 5.4 Install and check the GPU output (laptop, about 5 min)
+
+```
+uv run python -m fate_icu.rag.build_index --config configs/rag/full.yaml --part dense
+uv run python -m fate_icu.rag.verify --config configs/rag/full.yaml
+```
+
+The install refuses GPU output that does not match this laptop. It checks:
+- the corpus hash and model of the embeddings;
+- the BM25 lists, which must be identical;
+- the dense lists, recomputed for every query;
+- two queries' reranks, recomputed.
+
+### 5.5 Relevance grades (you, about 3-6 h over several sittings)
+
+```
+uv run python -m fate_icu.rag.evaluate sheet --config configs/rag/full.yaml
+uv run python -m fate_icu.rag.label --config configs/rag/full.yaml
+uv run python -m fate_icu.rag.evaluate import --config configs/rag/full.yaml --rater <your initials>
+uv run python -m fate_icu.rag.evaluate score --config configs/rag/full.yaml
+```
+
+How to grade is in `docs/rag_grading_guide.md`.
+
+### 5.6 Copy the index to the lab (minutes)
+
+Copy these from the laptop's `<FATE_RAG_DIR>\rag_full\` to the same place under the lab's
+`FATE_RAG_DIR`, by USB drive or cloud storage (it is public data):
+- `corpus\<corpus id>\`;
+- `index\<version>\` (the `gpu_out\` folder can stay behind);
+- `corpus.CURRENT` and `index.CURRENT`.
+
+Then set `FATE_RAG_DIR` in the lab's `.env`, and run:
+
+```
+uv run python -m fate_icu.rag.verify --config configs/rag/full.yaml
+```
+
+### Paste back
+
+The JSON printed by `verify` in the lab.

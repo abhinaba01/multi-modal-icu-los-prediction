@@ -1,0 +1,134 @@
+<?xml version="1.0" ?>
+<!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle, 1st January 2025//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd">
+<!-- Synthetic records written for the FaTE-ICU tests: invented text, not real studies. -->
+<PubmedArticleSet>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000001</PMID>
+    <Article PubModel="Print-Electronic">
+      <Journal>
+        <JournalIssue CitedMedium="Internet"><Volume>47</Volume><Issue>3</Issue>
+          <PubDate><Year>2019</Year><Month>Mar</Month></PubDate>
+        </JournalIssue>
+        <Title>Critical care medicine</Title>
+        <ISOAbbreviation>Crit Care Med</ISOAbbreviation>
+      </Journal>
+      <ArticleTitle>Early lactate clearance and length of stay in a synthetic intensive care cohort.</ArticleTitle>
+      <Abstract>
+        <AbstractText Label="BACKGROUND" NlmCategory="BACKGROUND">Raised blood lactate is a marker of tissue hypoperfusion in critically ill adults. Whether early clearance relates to the duration of intensive care is uncertain.</AbstractText>
+        <AbstractText Label="METHODS" NlmCategory="METHODS">We followed adults admitted to a mixed intensive care unit and measured lactate at admission and six hours later. Clearance was the relative fall between the two values.</AbstractText>
+        <AbstractText Label="RESULTS" NlmCategory="RESULTS">Patients whose lactate fell by less than ten percent stayed longer in the unit and needed vasopressors more often. The association remained after adjustment for illness severity (p &lt; 0.05).</AbstractText>
+        <AbstractText Label="CONCLUSIONS" NlmCategory="CONCLUSIONS">Poor early lactate clearance is associated with a longer intensive care unit length of stay.</AbstractText>
+        <CopyrightInformation>Copyright 2019 Synthetic Publisher. All rights reserved.</CopyrightInformation>
+      </Abstract>
+      <AuthorList CompleteYN="Y">
+        <Author ValidYN="Y"><LastName>Rao</LastName><ForeName>Anita</ForeName><Initials>A</Initials></Author>
+        <Author ValidYN="Y"><LastName>Mensah</LastName><ForeName>Kofi</ForeName><Initials>K</Initials></Author>
+        <Author ValidYN="Y"><LastName>Silva</LastName><ForeName>Paula</ForeName><Initials>P</Initials></Author>
+      </AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList>
+        <PublicationType UI="D016428">Journal Article</PublicationType>
+        <PublicationType UI="D064888">Observational Study</PublicationType>
+      </PublicationTypeList>
+      <ArticleDate DateType="Electronic"><Year>2019</Year><Month>01</Month><Day>15</Day></ArticleDate>
+    </Article>
+    <MeshHeadingList>
+      <MeshHeading><DescriptorName UI="D007362" MajorTopicYN="N">Intensive Care Units</DescriptorName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D019344" MajorTopicYN="Y">Lactic Acid</DescriptorName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D007902" MajorTopicYN="N">Length of Stay</DescriptorName></MeshHeading>
+    </MeshHeadingList>
+  </MedlineCitation>
+  <PubmedData>
+    <History><PubMedPubDate PubStatus="pubmed"><Year>2019</Year><Month>1</Month><Day>16</Day></PubMedPubDate></History>
+    <ArticleIdList>
+      <ArticleId IdType="pubmed">90000001</ArticleId>
+      <ArticleId IdType="doi">10.0000/synthetic.0001</ArticleId>
+    </ArticleIdList>
+  </PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000002</PMID>
+    <Article PubModel="Print">
+      <Journal>
+        <JournalIssue CitedMedium="Print"><Volume>22</Volume>
+          <PubDate><MedlineDate>2018 Jan-Feb</MedlineDate></PubDate>
+        </JournalIssue>
+        <Title>Journal of synthetic nephrology</Title>
+      </Journal>
+      <ArticleTitle>Rising serum creatinine in the first day of <i>intensive care</i> and the risk of acute kidney injury.</ArticleTitle>
+      <Abstract>
+        <AbstractText>Serum creatinine was recorded every six hours in adults during their first day of intensive care. A rise of 0.3 mg/dL or more within 48 hours defined acute kidney injury, as in the KDIGO criteria. Patients with an early rise received renal replacement therapy more often and remained in the unit for longer. Urine output below 0.5 mL/kg/h for six hours added information to creatinine alone. Monitoring both markers early may identify patients at risk of a prolonged stay; values were expressed per 1.73 m<sup>2</sup> where relevant.</AbstractText>
+      </Abstract>
+      <AuthorList CompleteYN="Y">
+        <Author ValidYN="Y"><CollectiveName>Synthetic ICU Outcomes Collaborative</CollectiveName></Author>
+      </AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+      <ELocationID EIdType="doi" ValidYN="Y">10.0000/synthetic.0002</ELocationID>
+    </Article>
+  </MedlineCitation>
+  <PubmedData>
+    <ArticleIdList><ArticleId IdType="pubmed">90000002</ArticleId></ArticleIdList>
+  </PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000003</PMID>
+    <Article PubModel="Print">
+      <Journal><JournalIssue><PubDate><Year>2020</Year></PubDate></JournalIssue><ISOAbbreviation>Synth Crit Care</ISOAbbreviation></Journal>
+      <ArticleTitle>A record without an abstract.</ArticleTitle>
+      <AuthorList><Author><LastName>Novak</LastName><Initials>T</Initials></Author></AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000004</PMID>
+    <Article PubModel="Print">
+      <Journal><JournalIssue><PubDate><Year>2017</Year></PubDate></JournalIssue><ISOAbbreviation>Synth Rean</ISOAbbreviation></Journal>
+      <ArticleTitle>[A record in French about sedation.]</ArticleTitle>
+      <Abstract><AbstractText>Un resume synthetique en francais sur la sedation en reanimation.</AbstractText></Abstract>
+      <AuthorList><Author><LastName>Martin</LastName><Initials>C</Initials></Author></AuthorList>
+      <Language>fre</Language>
+      <PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000005</PMID>
+    <Article PubModel="Print">
+      <Journal><JournalIssue><PubDate><Year>2016</Year></PubDate></JournalIssue><ISOAbbreviation>Synth Crit Care</ISOAbbreviation></Journal>
+      <ArticleTitle>A retracted synthetic study of fluid therapy.</ArticleTitle>
+      <Abstract><AbstractText>This synthetic abstract belongs to a retracted publication and must be excluded.</AbstractText></Abstract>
+      <AuthorList><Author><LastName>Okafor</LastName><Initials>B</Initials></Author></AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList>
+        <PublicationType UI="D016428">Journal Article</PublicationType>
+        <PublicationType UI="D016441">Retracted Publication</PublicationType>
+      </PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000006</PMID>
+    <Article PubModel="Print">
+      <Journal><JournalIssue><PubDate><Year>2021</Year></PubDate></JournalIssue><ISOAbbreviation>Synth Crit Care</ISOAbbreviation></Journal>
+      <ArticleTitle>A letter about glucose targets.</ArticleTitle>
+      <Abstract><AbstractText>A synthetic letter replying to an earlier article on glucose control.</AbstractText></Abstract>
+      <AuthorList><Author><LastName>Haddad</LastName><Initials>S</Initials></Author></AuthorList>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016422">Letter</PublicationType></PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+<PubmedBookArticle>
+  <BookDocument><PMID Version="1">90000098</PMID><ArticleTitle>A synthetic book chapter.</ArticleTitle></BookDocument>
+</PubmedBookArticle>
+<DeleteCitation><PMID Version="1">90000099</PMID></DeleteCitation>
+</PubmedArticleSet>

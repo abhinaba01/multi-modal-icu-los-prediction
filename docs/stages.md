@@ -13,7 +13,7 @@ Referenced from CLAUDE.md. Read **only the stage I name** ("Start Stage N"); don
 | 0 | Repo and contract | done 2026-11-02 (pending contract review) | – |
 | 2 | Hourly time-series tensors | done 2026-11-02 | – |
 | 1 | Link MIMIC-IV and MIMIC-CXR | done 2026-11-02 | – |
-| 5 | RAG layer | – | – |
+| 5 | RAG layer | code and smoke run done 2026-11-13; full index pending | – |
 | 3 | Encoders, fusion model, baselines | – | – |
 | 4 | Attribution and evidence packets | – | – |
 | 6 | LLM explainer (MedGemma + QLoRA) | – | – |

@@ -16,12 +16,35 @@ Each finished stage gets a summary of at most 10 lines here.
   end to end on `mimiciv_demo`.
 - **Stage 1:** built 2026-11-02. 210 tests pass (2 `realdata` skipped); the smoke link
   (demo cohort, synthetic metadata) and the cache step (public images) run end to end.
-- **Waiting for:** your review of `docs/contract.md` (Stage 0).
+- **Stage 5:** code and smoke run done 2026-11-13. 364 tests pass (2 `realdata` skipped). The
+  full index is pending: your `.env` settings and the guideline PDFs, then the downloads, the
+  Kaggle GPU step and your relevance grades (`docs/lab_runbook.md`, Stage 5).
+- **Waiting for:** your review of `docs/contract.md` (Stage 0); for Stage 5, `FATE_RAG_DIR`
+  outside OneDrive and `NCBI_EMAIL` in `.env`, the four guideline PDFs with their licences,
+  and your review of `configs/rag/pubmed_queries.yaml`.
 - **Lab, Stage 0** (`docs/lab_runbook.md`): load MIMIC-IV v3.1, run the tests including
   `realdata`, reproduce the internship with the legacy scripts, then freeze the
   long-stay threshold.
 
 ## Stage summaries
+
+### Stage 5: RAG layer (code and smoke run done, 2026-11-13; full index pending)
+
+- **Corpus:** PubMed through E-utilities (7 topic and 37 driver searches), all of StatPearls
+  (the 2.05 GB archive) and four guidelines, cut into passages of at most 300 MedCPT tokens
+  within sections (D-033 to D-036).
+- **Retrieval:** BM25, then MedCPT at pinned revisions in an exact FAISS index, fused with RRF
+  and reranked by the cross-encoder; top 3 per driver as R1..Rn; ties by passage id (D-031,
+  D-037). MedCPT reproduces its model-card outputs here.
+- **Queries:** 100 fixed queries over 50 driver labels, run once into a query bank, so
+  `retrieve(packet)` is a deterministic lookup. Stage 4 packets must carry each driver's `key`
+  (D-038).
+- **GPU step:** one command on Kaggle or Colab (embeddings, FAISS, bank), checked on the laptop
+  before it is installed (D-039).
+- **Evaluation:** blind pooled sheet, a terminal grader, P@3 and nDCG@5 with CIs and paired
+  tests (D-040).
+- **Smoke run** (synthetic fixtures, real MedCPT on this CPU, 404 s): 22 passages, every check
+  passed.
 
 ### Stage 1: link MIMIC-IV and MIMIC-CXR (build done, 2026-11-02)
 

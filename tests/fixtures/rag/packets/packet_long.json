@@ -1,0 +1,13 @@
+{
+  "note": "Synthetic evidence packet in the Stage 4 format (illustrative values, no patient data).",
+  "prediction": {"p_long_stay": 0.78, "predicted_los_days": 6.4, "long_stay_threshold_days": 4, "window_hours": 24},
+  "drivers": [
+    {"id": "D1", "modality": "timeseries", "key": "creatinine", "label": "serum creatinine",
+     "time": "hours 12-24", "observed": "rose from 1.1 to 2.3 mg/dL", "reference_range": "0.6-1.2 mg/dL",
+     "direction": "longer", "effect": 0.42},
+    {"id": "D2", "modality": "image", "key": "Effusion", "label": "pleural effusion (image model estimate 0.81)",
+     "region": "right lower lung zone", "direction": "longer", "effect": 0.21},
+    {"id": "D3", "modality": "static", "key": "sofa_static", "label": "SOFA score (worst of first 24 h)",
+     "observed": "total SOFA 9", "direction": "longer", "effect": 0.18}
+  ]
+}

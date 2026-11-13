@@ -1,0 +1,13 @@
+{
+  "note": "Synthetic evidence packet in the Stage 4 format (illustrative values, no patient data). Two drivers share a key, so their passages are deduplicated.",
+  "prediction": {"p_long_stay": 0.21, "predicted_los_days": 2.1, "long_stay_threshold_days": 4, "window_hours": 24},
+  "drivers": [
+    {"id": "D1", "modality": "timeseries", "key": "lactate", "label": "lactate", "time": "hours 0-4",
+     "observed": "fell from 4.0 to 1.8 mmol/L", "reference_range": "0.5-2.0 mmol/L",
+     "direction": "shorter", "effect": -0.30},
+    {"id": "D2", "modality": "timeseries", "key": "ne_dose", "label": "vasopressor dose (norepinephrine equivalent)",
+     "time": "hours 8-12", "observed": "stopped at hour 9", "direction": "shorter", "effect": -0.19},
+    {"id": "D3", "modality": "timeseries", "key": "lactate", "label": "lactate", "time": "hours 16-20",
+     "observed": "1.2 mmol/L", "reference_range": "0.5-2.0 mmol/L", "direction": "shorter", "effect": -0.11}
+  ]
+}
