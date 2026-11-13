@@ -47,6 +47,8 @@ from fate_icu.rag.sources.jats import (
 STATPEARLS_URL = "https://ftp.ncbi.nlm.nih.gov/pub/litarch/3d/12/statpearls_NBK430685.tar.gz"
 BOOK_ID = "NBK430685"
 BOOK_URL = "https://www.ncbi.nlm.nih.gov/books/NBK430685/"
+PART_URL = "https://www.ncbi.nlm.nih.gov/books/n/statpearls/"
+_PART_ID = re.compile(r"^article-\d+$")
 DEFAULT_LICENCE = "CC BY-NC-ND 4.0 (StatPearls Publishing)"
 DEFAULT_EXCLUDED_SECTIONS = (
     "Continuing Education Activity",
@@ -54,6 +56,10 @@ DEFAULT_EXCLUDED_SECTIONS = (
     "References",
     "Disclosure",
     "Disclosures",
+    # Teamwork and process text ("an interprofessional team approach is crucial..."): 5% of the
+    # passages, 57% of them mention "outcomes" (9% elsewhere), and none supports a clinical
+    # association, but a query about outcome or length of stay would keep pulling them in.
+    "Enhancing Healthcare Team Outcomes",
 )
 MAX_PARSE_ERROR_SHARE = 0.01
 _NBK = re.compile(r"NBK\d+")
@@ -235,6 +241,19 @@ def _article_nbk(root: ET.Element) -> str | None:
     return None
 
 
+def article_url(nbk: str | None, doc_id: str) -> str:
+    """The article's own page: its NBK id if the file names one, else Bookshelf's page for the part.
+
+    The real archive names no NBK id: articles are ``article-<number>``, and
+    ``/books/n/statpearls/article-<number>/`` is Bookshelf's address for that part (NCBI answers
+    scripts with a bot check, so the pattern is spot-checked in a browser, not by the build).
+    Anything else links to the whole book.
+    """
+    if nbk:
+        return f"https://www.ncbi.nlm.nih.gov/books/{nbk}/"
+    return f"{PART_URL}{doc_id}/" if _PART_ID.match(doc_id) else BOOK_URL
+
+
 def statpearls_citation(authors: list[str], title: str, year: int | None) -> str:
     """e.g. "Smith J, Lee K. Lactic Acidosis. In: StatPearls [Internet]. Treasure Island (FL):
     StatPearls Publishing; 2025." (three authors at most, then "et al")."""
@@ -273,7 +292,7 @@ def parse_statpearls_article(
             doc_id=doc_id,
             title=title,
             sections=tuple(sections),
-            url=f"https://www.ncbi.nlm.nih.gov/books/{nbk}/" if nbk else BOOK_URL,
+            url=article_url(nbk, doc_id),
             licence=jats_license(root) or licence_default,
             citation=statpearls_citation(jats_authors(root), title, year),
             year=year,

@@ -242,3 +242,19 @@ def test_labelling_tool_with_scripted_answers(tmp_path):
     again = label_tool.run(sheet, ask=lambda prompt: "1", say=said.append)  # resumes at the ungraded row
     assert again == {"graded": 3, "total": 3} and [r.grade for r in read_labelling_sheet(sheet)] == [2, 1, 0]
     assert label_tool.run(sheet, ask=lambda prompt: "q", say=said.append) == {"graded": 3, "total": 3}
+
+
+def test_labelling_tool_survives_a_console_that_cannot_show_a_character(tmp_path, monkeypatch):
+    import io
+
+    sheet = tmp_path / "sheet.tsv"
+    passages = {
+        "a": SimpleNamespace(source="pubmed", title="T", section="", locator="", text="π is not Latin-1")
+    }
+    write_labelling_sheet(sheet, {"q1": ["a"]}, {"q1": "query"}, passages, "v1")
+    console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", write_through=True)  # a legacy code page
+    monkeypatch.setattr("sys.stdout", console)
+    monkeypatch.setattr("sys.stdin", io.StringIO("q\n"))
+    label_tool.main(["--sheet", str(sheet)])
+    shown = console.buffer.getvalue().decode("cp1252")
+    assert "? is not Latin-1" in shown and "Saved." in shown

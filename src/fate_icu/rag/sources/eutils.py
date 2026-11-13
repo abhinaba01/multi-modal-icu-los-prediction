@@ -19,7 +19,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 ESEARCH_CAP = 10_000  # esearch returns at most this many ids per search
@@ -196,6 +196,23 @@ class EutilsClient:
     ) -> int:
         """Number of PubMed records matching ``term`` (dates as ``YYYY/MM/DD``)."""
         return int(self._esearch(term, 0, mindate, maxdate, datetype)["count"])
+
+    def esearch_notes(self, term: str) -> dict[str, Any]:
+        """PubMed's own comments on a search: its translation and any phrase or field it did not find.
+
+        An unknown MeSH heading inside an OR group is not an error, it just never matches, so
+        these notes are how a typo in a search term shows up.
+        """
+        result = self._esearch(term, 0, None, None, "pdat")
+
+        def present(block: Any) -> dict[str, Any]:
+            return {key: value for key, value in (block or {}).items() if value}
+
+        return {
+            "translation": result.get("querytranslation", ""),
+            "errors": present(result.get("errorlist")),
+            "warnings": present(result.get("warninglist")),
+        }
 
     def esearch_ids(
         self,

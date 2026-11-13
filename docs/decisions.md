@@ -468,8 +468,9 @@ fetch.
   resumes after an interruption and records a SHA-256 sidecar.
 - The archive is streamed, never extracted. Only `.nxml` members are read. Unsafe or
   oversized members stop the build, and so do more than 1% unparseable articles.
-- Dropped sections: "Continuing Education Activity", "Review Questions", "References" and
-  "Disclosure(s)".
+- Dropped sections: "Continuing Education Activity", "Review Questions", "References",
+  "Disclosure(s)" and, added after the real-archive check, "Enhancing Healthcare Team
+  Outcomes" (D-043).
 - Nested sections become "Parent: Child". Citation markers, figures, tables, captions and
   reference lists are removed.
 - Licence CC BY-NC-ND 4.0: passages are quoted with attribution, and the parsed copy is
@@ -481,8 +482,7 @@ fetch.
 - General articles (anaemia, hyperkalaemia, lactic acidosis) explain our channels.
 - The re-ranker pushes off-topic passages down.
 
-The parser was built on synthetic files; its first run on the real archive reports parse and
-skip counts, which are checked before the corpus is used.
+The parser was built on synthetic files and then checked on the real archive (D-043).
 
 ## D-035 · 2026-11-13 · Guidelines
 
@@ -513,7 +513,8 @@ set if needed.
 - A passage holds at most 300 tokens of the MedCPT article tokenizer. It is split at
   sentence boundaries and never crosses a section.
 - Within a section the split uses the fewest chunks, then the most even ones, so chunks hold
-  150 to 300 tokens unless the section is short. Passages under 5 tokens are dropped.
+  150 to 300 tokens unless the section is short. Passages under 20 tokens are dropped (5 at
+  first; D-043).
 - Text is NFKC-normalised. Each passage keeps its title, section and page locator, and its
   id is `<source>:<doc_id>:<chunk>`.
 - The corpus is a Parquet file sorted by id, hashed over its canonical JSON content.
@@ -620,3 +621,66 @@ standard. The labels file can be committed because it holds no copyrighted text.
 
 **Reason.** The Stage 5 spec: "Version the index (corpus hash + encoder revision) in the run
 manifest."
+
+## D-042 · 2026-11-13 · PubMed pre-flight: a silent query bug, and what the searches return
+
+**Decision.**
+- `fate_icu.rag.fetch --source pubmed --ids-only` runs every search without downloading any
+  record. It reports the records found per search and PubMed's own notes (a phrase or field it
+  did not recognise). A search that finds nothing stops the run, with PubMed's reading of it.
+- The first pre-flight found 0 records for all 44 searches. PubMed has no `AND NOT`: it
+  rewrites "A AND NOT B" into "A AND B" without an error (checked: `sepsis[tiab] AND NOT
+  editorial[pt]` found the 2,033 sepsis editorials, `sepsis[tiab] NOT editorial[pt]` the other
+  151,258). The filter had therefore selected editorials and letters instead of excluding
+  them.
+- Fixed: exclusions are `NOT (...)`; "abstract" is `hasabstract[text]`; the phrases
+  `"retraction of publication"[pt]` (not a publication type in PubMed's index) and
+  `"type of admission"[tiab]` (not found) are removed. A test rejects "AND NOT" and "OR NOT" in
+  any search.
+- Corrected pre-flight: 44 searches, **151,341 unique PMIDs**, 12 minutes, no PubMed notes. Per
+  search 418 to 41,827 records. The 7 topic searches find 7,946 to 41,827 each.
+- The record download is incremental. Batch files are named by their content, any readable
+  batch counts whichever search list fetched it, and a PMID PubMed returns nothing for is
+  remembered. Changing a search therefore downloads only the new records.
+- Book chapters (`PubmedBookArticle`, which includes StatPearls chapters) are read and excluded
+  as `book_article`. They count as found, so they cannot trip the 1% missing-records check, and
+  they do not duplicate the StatPearls archive.
+
+**Alternatives.** Trust the searches without a pre-flight.
+**Reason.** A query that matches nothing is not an error in PubMed. Without the pre-flight the
+build would have run on an empty corpus, or on a corpus of editorials.
+
+**Result on the real records (2026-11-13).**
+- All 151,341 records were downloaded in 19 minutes (757 batches, 2.4 GB), none missing.
+- Dry-run parse (8 minutes): 151,140 kept, 190 book chapters excluded, 11 without an
+  abstract. Nothing was left to the language, retraction or publication-type rules, which the
+  search filter already applies.
+- 151,126 abstracts gave 265,346 passages: 45,226 abstracts in one passage, 98,733 in two,
+  6,476 in three. Median 198 tokens, 95th percentile 281, maximum 300. 0.15% exact duplicates.
+- Expected full corpus: about 425,000 passages (PubMed 265,000, StatPearls about 160,000,
+  guidelines a few hundred), about 1-1.5 hours of embedding on a Kaggle T4.
+
+## D-043 · 2026-11-13 · StatPearls on the real archive
+
+**Decision.**
+- The archive (2,047,364,463 bytes, SHA-256 `08117bcf…`) was downloaded on 2026-11-13 in 8.8
+  minutes. It holds 9,653 articles: 9,651 parsed, one without a title and one without a body.
+- Real articles are `article-<number>` files with no NBK id. Their URL is
+  `https://www.ncbi.nlm.nih.gov/books/n/statpearls/article-<number>/`, Bookshelf's address for
+  that part. NCBI answers scripts with a bot check, so the pattern is not verified by the build:
+  open a few URLs from `corpus_manifest.csv` in a browser. The 117 `nurse-article-<number>`
+  articles (1.2% of passages) link to the whole book.
+- "Enhancing Healthcare Team Outcomes" is also dropped. It is process text about
+  interprofessional teams: 83% of its passages use team language and 57% mention "outcomes"
+  (9% elsewhere), and the 9,072 passages (5.3% of StatPearls) support no driver. Every query
+  ends in "length of stay", so they would keep competing with real evidence. This narrows "all
+  of StatPearls" by one section type; re-adding it is one line in
+  `sources.statpearls.exclude_sections`.
+- `chunking.min_tokens` is 20, not 5. Passages under 20 tokens (0.6%) are list fragments such as
+  "Technician / Physiatrist".
+- Dry run of the chunker on the whole archive (before those two changes): 170,780 passages in
+  327 s, median 215 tokens, 95th percentile 288, maximum 300; 0.24% exact duplicate texts.
+
+**Alternatives.** Keep every section; keep short passages.
+**Reason.** Checked on the real data rather than assumed. Both choices are cheap to reverse
+until the index and the relevance grades exist, and expensive afterwards.

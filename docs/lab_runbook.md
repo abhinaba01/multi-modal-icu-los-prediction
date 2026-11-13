@@ -269,18 +269,27 @@ the model-heavy step. The lab only receives the finished index and checks it.
   on the publisher's page, and check each citation against its PDF.
 - The MedCPT models (about 1.3 GB) are already in the laptop's Hugging Face cache.
 
-### 5.1 Download StatPearls and PubMed (laptop; each about 30-60 min; both resume)
+### 5.1 Download StatPearls and PubMed (laptop; about 9 + 12 + 19 min measured; all resume)
 
 ```
 uv run python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source statpearls --check-size
 uv run python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source statpearls
+uv run python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source pubmed --ids-only
 uv run python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source pubmed
 ```
 
 If the size check fails, NCBI has updated StatPearls. Review the change, then set
 `sources.statpearls.expected_size` in the config.
 
-### 5.2 Corpus, BM25 and the GPU bundle (laptop, about 20-40 min)
+The `--ids-only` run (about 5-20 min) runs every PubMed search and downloads no records. It
+reports how many records each search found, the total, and `searches_with_pubmed_notes`: any
+phrase or field PubMed did not recognise (an unknown MeSH heading never matches and raises
+no error). Check these before the last command downloads the records. Finished searches are
+cached, so the last command does not repeat them. NCBI asks that bulk requests run outside
+US Eastern working hours (9 PM to 5 AM on weekdays, or at weekends); the commands print a
+time-stamped line per search and per 25 batches, so a background run can be followed.
+
+### 5.2 Corpus, BM25 and the GPU bundle (laptop, about 20 min)
 
 ```
 uv run python -I -m fate_icu.rag.build_corpus --config configs/rag/full.yaml

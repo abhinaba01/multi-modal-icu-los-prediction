@@ -110,7 +110,7 @@ multi_modal_icu_los_prediction/
 
 ## A10. Current status
 
-Phase: build (laptop). Stage 0 build done (the user's contract review is pending). Stages 2 and 1 built. Stage 5 code and smoke run done (364 tests pass); its full index is pending (downloads, Kaggle GPU step, relevance grades). Next: the Stage 5 full build, then Stage 3.
+Phase: build (laptop). Stage 0 build done (the user's contract review is pending). Stages 2 and 1 built. Stage 5 code and smoke run done (373 tests pass) and its public data downloaded (StatPearls, 151,341 PubMed records); its full index is pending (guideline PDFs, Kaggle GPU step, relevance grades). Next: finish the Stage 5 index, then Stage 3.
 
 ---
 

@@ -16,12 +16,13 @@ Each finished stage gets a summary of at most 10 lines here.
   end to end on `mimiciv_demo`.
 - **Stage 1:** built 2026-11-02. 210 tests pass (2 `realdata` skipped); the smoke link
   (demo cohort, synthetic metadata) and the cache step (public images) run end to end.
-- **Stage 5:** code and smoke run done 2026-11-13. 364 tests pass (2 `realdata` skipped). The
-  full index is pending: your `.env` settings and the guideline PDFs, then the downloads, the
-  Kaggle GPU step and your relevance grades (`docs/lab_runbook.md`, Stage 5).
-- **Waiting for:** your review of `docs/contract.md` (Stage 0); for Stage 5, `FATE_RAG_DIR`
-  outside OneDrive and `NCBI_EMAIL` in `.env`, the four guideline PDFs with their licences,
-  and your review of `configs/rag/pubmed_queries.yaml`.
+- **Stage 5:** code and smoke run done 2026-11-13; 373 tests pass (2 `realdata` skipped). The
+  public data is downloaded into `D:\fate-data\rag`: StatPearls (2.05 GB) and 151,341 PubMed
+  records. The full index still needs the four guideline PDFs, the Kaggle GPU step and your
+  relevance grades (`docs/lab_runbook.md`, Stage 5).
+- **Waiting for:** your review of `docs/contract.md` (Stage 0); for Stage 5, the four guideline
+  PDFs with their licences, a browser spot-check of one StatPearls link (D-043), and your review
+  of `configs/rag/pubmed_queries.yaml`.
 - **Lab, Stage 0** (`docs/lab_runbook.md`): load MIMIC-IV v3.1, run the tests including
   `realdata`, reproduce the internship with the legacy scripts, then freeze the
   long-stay threshold.
@@ -45,6 +46,11 @@ Each finished stage gets a summary of at most 10 lines here.
   tests (D-040).
 - **Smoke run** (synthetic fixtures, real MedCPT on this CPU, 404 s): 22 passages, every check
   passed.
+- **Real data** (D-042, D-043): the first PubMed pre-flight found 0 records because PubMed
+  silently turns `AND NOT` into `AND`; fixed, then 44 searches gave 151,341 records, all
+  downloaded and parsed (265,346 passages). StatPearls parsed fully (9,651 articles, 170,780
+  passages before dropping the team-outcomes boilerplate). Expected corpus: about 425,000
+  passages.
 
 ### Stage 1: link MIMIC-IV and MIMIC-CXR (build done, 2026-11-02)
 

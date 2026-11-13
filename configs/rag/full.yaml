@@ -48,7 +48,7 @@ sources:
 
 chunking:
   max_tokens: 300
-  min_tokens: 5
+  min_tokens: 20
   counter: medcpt
 
 embedding:

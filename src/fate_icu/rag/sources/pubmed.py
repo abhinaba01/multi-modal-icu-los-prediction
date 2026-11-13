@@ -24,9 +24,10 @@ import json
 import os
 import re
 import string
+import threading
 import xml.etree.ElementTree as ET
 from collections import Counter
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -201,23 +202,32 @@ class PmidCollection(BaseModel):
     per_query: dict[str, int]
     retrieved_on: str
     query_set_sha256: str
+    # PubMed's errors and warnings for a search (a phrase or field it did not find), by search id
+    warnings: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 def collect_pmids(
-    client: EutilsClient, query_set: PubmedQuerySet, cache_dir: Path, *, max_records: int | None = None
+    client: EutilsClient,
+    query_set: PubmedQuerySet,
+    cache_dir: Path,
+    *,
+    max_records: int | None = None,
+    log: Callable[[str], None] | None = None,
 ) -> PmidCollection:
     """Run every search (reusing a cached result only for an identical term) and save the PMIDs.
 
     Raises:
-        EutilsError: The date slices of a search return fewer ids than its full count.
+        EutilsError: The date slices of a search return fewer ids than its full count, or a
+            search finds no records at all (a malformed search).
     """
     cache_dir = Path(cache_dir)
-    per_query, union, dates = {}, set(), []
-    for query in query_set.queries:
+    per_query, union, dates, problems = {}, set(), [], {}
+    for number, query in enumerate(query_set.queries, start=1):
         term = query_set.full_term(query)
         path = cache_dir / "esearch" / f"{query.id}.json"
         cached = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
-        if cached is None or cached.get("term") != term:
+        reused = cached is not None and cached.get("term") == term
+        if not reused:
             slices, total = slice_dates(client, term, query_set.min_year, query_set.max_year)
             ids = sorted(
                 {i for s in slices for i in client.esearch_ids(term, mindate=s.mindate, maxdate=s.maxdate)}
@@ -231,12 +241,29 @@ def collect_pmids(
                 "slices": [vars(s) for s in slices],
                 "count": total,
                 "ids": ids,
+                "notes": client.esearch_notes(term),
                 "retrieved_on": _today(),
             }
             _write_json(path, cached)
+        notes = cached.get("notes", {})
+        flagged = {key: notes[key] for key in ("errors", "warnings") if notes.get(key)}
+        if not cached["ids"]:  # a malformed search matches nothing, and PubMed does not call it an error
+            translation = notes.get("translation", "")[:400]
+            raise EutilsError(
+                f"search {query.id} found no records. PubMed read it as: {translation!r}. "
+                f"PubMed's notes: {json.dumps(flagged)}"
+            )
         per_query[query.id] = len(cached["ids"])
         union.update(cached["ids"])
         dates.append(cached["retrieved_on"])
+        if flagged:
+            problems[query.id] = flagged
+        if log:
+            log(
+                f"[{number}/{len(query_set.queries)}] {query.id}: {len(cached['ids']):,} records "
+                f"({'cached' if reused else 'searched'}); {len(union):,} unique so far"
+                + (f"; PubMed notes: {json.dumps(flagged)}" if flagged else "")
+            )
     pmids = sorted(union)
     if max_records is not None:
         pmids = pmids[-max_records:]  # the most recent PMIDs, deterministically
@@ -245,6 +272,7 @@ def collect_pmids(
         per_query=per_query,
         retrieved_on=max(dates) if dates else _today(),
         query_set_sha256=query_set.sha256,
+        warnings=problems,
     )
     _write_json(cache_dir / "pmids.json", collection.model_dump())
     return collection
@@ -256,28 +284,32 @@ def collect_pmids(
 class FetchReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    batches: int
-    fetched: int
-    reused: int
+    batches: int  # batch files holding requested records (fetched now + reused)
+    fetched: int  # batches downloaded by this call
+    reused: int  # batch files from earlier calls that hold requested records
     pmids_requested: int
     pmids_found: int
     pmids_missing: int
 
 
-def batch_name(index: int, pmids: Sequence[int]) -> str:
+def batch_name(pmids: Sequence[int]) -> str:
+    """``batch-<first pmid>-<count>-<hash>.xml``: named by content, never by position in a list."""
     digest = hashlib.sha256(",".join(str(p) for p in pmids).encode("ascii")).hexdigest()[:8]
-    return f"batch-{index:05d}-{digest}.xml"
+    return f"batch-{pmids[0]:09d}-{len(pmids):04d}-{digest}.xml"
 
 
 def _batch_pmids(path: Path) -> set[int] | None:
-    """PMIDs of the articles in a batch file, or None if the file is unreadable."""
+    """PMIDs of the articles and book chapters in a batch file, or None if the file is unreadable."""
     try:
         root = ET.parse(path).getroot()
     except (ET.ParseError, OSError):
         return None
     if root.tag != "PubmedArticleSet":
         return None
-    return {int(e.text) for e in root.findall("PubmedArticle/MedlineCitation/PMID") if e.text}
+    found = root.findall("PubmedArticle/MedlineCitation/PMID") + root.findall(
+        "PubmedBookArticle/BookDocument/PMID"
+    )
+    return {int(e.text) for e in found if e.text}
 
 
 def fetch_records(
@@ -287,56 +319,92 @@ def fetch_records(
     *,
     batch_size: int = 200,
     max_workers: int = 1,
+    log: Callable[[str], None] | None = None,
 ) -> FetchReport:
-    """Download the records into ``cache_dir/efetch/`` (resumable) and index the current batches.
+    """Download the requested records into ``cache_dir/efetch/``, only those not already there.
+
+    Every readable batch file in the folder counts, whichever version of the searches fetched
+    it, so adding or removing a search downloads only the records that are new. A PMID that
+    PubMed returned nothing for (a withdrawn or deleted record) is remembered in
+    ``efetch/index.json`` and not requested again. The index lists the batch files that hold
+    requested records, which is what :func:`iter_documents` reads.
 
     Raises:
         EutilsError: More than 1% of the requested PMIDs are missing from the records.
+        RuntimeError: A requested PMID is in two batch files.
     """
     efetch = Path(cache_dir) / "efetch"
     efetch.mkdir(parents=True, exist_ok=True)
-    ordered = sorted(set(int(p) for p in pmids))
-    batches = [ordered[i : i + batch_size] for i in range(0, len(ordered), batch_size)]
-    names = [batch_name(i, batch) for i, batch in enumerate(batches)]
+    ordered = sorted({int(p) for p in pmids})
+    wanted = set(ordered)
     index_path = efetch / "index.json"
-    previous = json.loads(index_path.read_text(encoding="utf-8"))["files"] if index_path.exists() else {}
-    found: dict[str, set[int]] = {}
-    todo = []
-    for i, name in enumerate(names):
-        existing = _batch_pmids(efetch / name)
-        if existing is None:
-            todo.append(i)
-        else:
-            found[name] = existing
+    previous = json.loads(index_path.read_text(encoding="utf-8")) if index_path.exists() else {}
+    unavailable = set(previous.get("unavailable", []))
+    on_disk: dict[str, set[int]] = {}
+    for batch_file in sorted(efetch.glob("batch-*.xml")):
+        found = _batch_pmids(batch_file)
+        if found is not None:
+            on_disk[batch_file.name] = found
+    covered = set().union(*on_disk.values()) if on_disk else set()
+    to_fetch = [p for p in ordered if p not in covered and p not in unavailable]
+    batches = [to_fetch[i : i + batch_size] for i in range(0, len(to_fetch), batch_size)]
+    names = [batch_name(batch) for batch in batches]
+
+    progress = {"done": 0}
+    progress_lock = threading.Lock()
 
     def fetch(i: int) -> None:
         xml = client.efetch_xml(batches[i])
         _atomic_write(efetch / names[i], xml)
+        with progress_lock:
+            progress["done"] += 1
+            if log and (progress["done"] % 25 == 0 or progress["done"] == len(batches)):
+                log(f"fetched {progress['done']:,} / {len(batches):,} batches")
 
+    if log:
+        log(
+            f"{len(to_fetch):,} of {len(ordered):,} records to fetch in {len(batches):,} batches "
+            f"({len(ordered) - len(to_fetch):,} already on disk or unavailable)"
+        )
     if max_workers > 1:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            list(pool.map(fetch, todo))  # re-raises the first failure
+            list(pool.map(fetch, range(len(batches))))  # re-raises the first failure
     else:
-        for i in todo:
+        for i in range(len(batches)):
             fetch(i)
+    for name, batch in zip(names, batches, strict=True):
+        got = _batch_pmids(efetch / name) or set()
+        on_disk[name] = got
+        unavailable |= set(batch) - got
+
+    used = {name: ids & wanted for name, ids in on_disk.items() if ids & wanted}
+    seen: set[int] = set()
+    for name, ids in used.items():
+        if seen & ids:
+            raise RuntimeError(
+                f"PMID {min(seen & ids)} is in two batch files of {efetch} (one is {name}): "
+                "remove the older file"
+            )
+        seen |= ids
+    earlier = previous.get("files", {})
     files = {}
-    for i in todo:
-        found[names[i]] = _batch_pmids(efetch / names[i]) or set()
-    fetched_now = set(todo)
-    for i, name in enumerate(names):
-        when = None if i in fetched_now else previous.get(name, {}).get("retrieved_on")
-        files[name] = {"pmids": len(batches[i]), "retrieved_on": when or _today()}
-    _write_json(index_path, {"files": files})
-    present = set().union(*found.values()) & set(ordered) if found else set()
-    missing = len(ordered) - len(present)
+    for name, ids in used.items():
+        when = earlier.get(name, {}).get("retrieved_on") if name not in names else None
+        if when is None:
+            stamp = (efetch / name).stat().st_mtime
+            when = _today() if name in names else datetime.fromtimestamp(stamp, UTC).date().isoformat()
+        files[name] = {"pmids": len(ids), "retrieved_on": when}
+    _write_json(index_path, {"files": files, "unavailable": sorted(unavailable)})
+    missing = len(ordered) - len(seen)
     if ordered and missing > MAX_MISSING_SHARE * len(ordered):
         raise EutilsError(f"{missing} of {len(ordered)} requested PMIDs are missing from the fetched records")
+    reused = sum(1 for name in used if name not in names)
     return FetchReport(
-        batches=len(batches),
-        fetched=len(todo),
-        reused=len(batches) - len(todo),
+        batches=len(names) + reused,
+        fetched=len(names),
+        reused=reused,
         pmids_requested=len(ordered),
-        pmids_found=len(present),
+        pmids_found=len(seen),
         pmids_missing=missing,
     )
 
@@ -355,6 +423,7 @@ class PubmedRecord:
     doi: str
     mesh: tuple[str, ...]
     retracted: bool
+    kind: str = "article"  # "book" for a PubmedBookArticle: a book chapter, e.g. a StatPearls chapter
 
 
 def _text(element: ET.Element | None) -> str:
@@ -437,16 +506,43 @@ def _parse_article(element: ET.Element) -> PubmedRecord | None:
     )
 
 
+def _parse_book_article(element: ET.Element) -> PubmedRecord | None:
+    """A book chapter, kept only so it is counted and excluded (StatPearls comes from its own archive)."""
+    document = element.find("BookDocument")
+    pmid_text = document.findtext("PMID") if document is not None else None
+    if not pmid_text or not pmid_text.strip().isdigit():
+        return None
+    return PubmedRecord(
+        pmid=int(pmid_text),
+        title=_text(document.find("ArticleTitle")),
+        abstract=(),
+        languages=(),
+        publication_types=(),
+        year=None,
+        journal="",
+        first_author="",
+        n_authors=0,
+        doi="",
+        mesh=(),
+        retracted=False,
+        kind="book",
+    )
+
+
 def parse_pubmed_xml(xml: bytes) -> list[PubmedRecord]:
-    """Every journal article of a ``PubmedArticleSet`` (book articles and deletions skipped)."""
+    """Every journal article and book chapter of a ``PubmedArticleSet`` (deletions are skipped)."""
     root = ET.fromstring(xml)
     if root.tag != "PubmedArticleSet":
         raise ValueError(f"not a PubmedArticleSet: {root.tag!r}")
-    return [r for r in (_parse_article(e) for e in root.findall("PubmedArticle")) if r is not None]
+    records = [_parse_article(e) for e in root.findall("PubmedArticle")]
+    records += [_parse_book_article(e) for e in root.findall("PubmedBookArticle")]
+    return [r for r in records if r is not None]
 
 
 def exclusion_reason(record: PubmedRecord) -> str | None:
     """Why a record is left out of the corpus, or None to keep it."""
+    if record.kind == "book":
+        return "book_article"
     if not record.title:
         return "no_title"
     if not record.abstract:

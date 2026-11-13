@@ -22,7 +22,9 @@ from fate_icu.rag.sources.statpearls import (
     BOOK_URL,
     DEFAULT_EXCLUDED_SECTIONS,
     DEFAULT_LICENCE,
+    PART_URL,
     HttpResponse,
+    article_url,
     download,
     iter_archive_articles,
     iter_statpearls_documents,
@@ -127,9 +129,14 @@ def test_articles_become_documents():
         "Treasure Island (FL): StatPearls Publishing; 2025."
     )
     aki = docs["article-90002"]  # no article NBK id: the book's own id never counts
-    assert aki.url == BOOK_URL and aki.licence == DEFAULT_LICENCE
+    assert aki.url == f"{PART_URL}article-90002/" and aki.licence == DEFAULT_LICENCE
+    assert article_url(None, "some-other-name") == BOOK_URL  # not the real archive's naming
+    assert article_url("NBK1", "article-1") == "https://www.ncbi.nlm.nih.gov/books/NBK1/"
     assert aki.citation.startswith("Achebe N, Berg LE, Costa R, et al. Acute Kidney Injury. In: StatPearls")
-    assert [s.title for s in docs["NBK900003"].sections] == ["Introduction", "Treatment / Management"]
+    septic = docs["NBK900003"]  # its team-outcomes and disclosure sections are boilerplate
+    assert [s.title for s in septic.sections] == ["Introduction", "Treatment / Management"]
+    assert "Enhancing Healthcare Team Outcomes" in DEFAULT_EXCLUDED_SECTIONS
+    assert all("boilerplate" not in p for s in septic.sections for p in s.paragraphs)
 
 
 def test_skip_reasons_and_parse_errors():

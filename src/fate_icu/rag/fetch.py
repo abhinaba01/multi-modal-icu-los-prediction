@@ -2,12 +2,16 @@
 
     python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source statpearls --check-size
     python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source statpearls
+    python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source pubmed --ids-only
     python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source pubmed
 
 PubMed: every search in ``configs/rag/pubmed_queries.yaml`` is run through NCBI E-utilities
-(date-sliced under the 10,000-ID cap), then the records are fetched in batches of 200 into
-``<FATE_RAG_DIR>/raw/pubmed/``. It needs ``NCBI_EMAIL`` in ``.env`` (NCBI's usage policy);
-``NCBI_API_KEY`` is optional. Both are sent only to NCBI and never printed or logged.
+(date-sliced under the 10,000-ID cap); with ``--ids-only`` it stops there and reports how
+many records each search found and any phrase PubMed did not recognise, so the searches can
+be checked before gigabytes are downloaded. Without it, the records are then fetched in
+batches of 200 into ``<FATE_RAG_DIR>/raw/pubmed/`` (finished searches are not repeated).
+It needs ``NCBI_EMAIL`` in ``.env`` (NCBI's usage policy); ``NCBI_API_KEY`` is optional.
+Both are sent only to NCBI and never printed or logged.
 StatPearls: the NCBI Bookshelf archive into ``<FATE_RAG_DIR>/raw/statpearls/``.
 
 Both steps resume where they stopped: run the same command again after an interruption.
@@ -17,6 +21,9 @@ Guideline PDFs are downloaded by hand (docs/lab_runbook.md, Stage 5).
 from __future__ import annotations
 
 import argparse
+import math
+from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 from fate_icu.rag.config import RagConfig, RagPaths, load_config, rag_paths, repo_path
@@ -26,6 +33,11 @@ from fate_icu.rag.sources.statpearls import download, remote_size
 from fate_icu.utils.aggregates import format_aggregates
 from fate_icu.utils.env import Settings, load_settings
 from fate_icu.utils.manifest import new_run_id, write_run_manifest
+
+
+def timestamped(message: str) -> None:
+    """A progress line with the local time, flushed so a background run can be followed."""
+    print(f"{datetime.now():%H:%M:%S} {message}", flush=True)
 
 
 def eutils_client(settings: Settings) -> EutilsClient:
@@ -39,31 +51,43 @@ def eutils_client(settings: Settings) -> EutilsClient:
     return EutilsClient(email=settings.ncbi_email.get_secret_value(), api_key=key)
 
 
-def fetch_pubmed(config: RagConfig, paths: RagPaths, settings: Settings) -> dict[str, Any]:
+def fetch_pubmed(
+    config: RagConfig,
+    paths: RagPaths,
+    settings: Settings,
+    *,
+    ids_only: bool = False,
+    log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
     source = config.sources.pubmed
     if source.fixtures:
         return {"pubmed": f"uses the fixtures in {source.fixtures}; nothing to fetch"}
     client = eutils_client(settings)
     query_set = load_pubmed_queries(repo_path(source.queries))
-    collection = collect_pmids(client, query_set, paths.raw_pubmed, max_records=source.max_records)
-    report = fetch_records(
+    collection = collect_pmids(client, query_set, paths.raw_pubmed, max_records=source.max_records, log=log)
+    report: dict[str, Any] = {
+        "query_set_sha256": collection.query_set_sha256,
+        "searches": len(collection.per_query),
+        "ids_per_search": collection.per_query,
+        "searches_with_pubmed_notes": collection.warnings,
+        "unique_pmids": len(collection.pmids),
+        "retrieved_on": collection.retrieved_on,
+        "api_key_used": settings.ncbi_api_key is not None,
+    }
+    if ids_only:
+        report["batches_to_fetch"] = math.ceil(len(collection.pmids) / source.batch_size)
+        report["next_step"] = "run the same command without --ids-only to download the records"
+        return {"pubmed": report}
+    fetched = fetch_records(
         client,
         collection.pmids,
         paths.raw_pubmed,
         batch_size=source.batch_size,
         max_workers=source.max_workers,
+        log=log,
     )
-    return {
-        "pubmed": {
-            "query_set_sha256": collection.query_set_sha256,
-            "searches": len(collection.per_query),
-            "ids_per_search": collection.per_query,
-            "unique_pmids": len(collection.pmids),
-            "retrieved_on": collection.retrieved_on,
-            "fetch": report.model_dump() if hasattr(report, "model_dump") else vars(report),
-            "api_key_used": settings.ncbi_api_key is not None,
-        }
-    }
+    report["fetch"] = fetched.model_dump()
+    return {"pubmed": report}
 
 
 def fetch_statpearls(config: RagConfig, paths: RagPaths, *, check_only: bool) -> dict[str, Any]:
@@ -79,12 +103,20 @@ def fetch_statpearls(config: RagConfig, paths: RagPaths, *, check_only: bool) ->
     if check_only:
         return {"statpearls": {"url": source.url, "remote_size_bytes": size}}
     info = download(source.url, paths.raw_statpearls, expected_size=source.expected_size)
-    return {"statpearls": info.model_dump(mode="json") if hasattr(info, "model_dump") else vars(info)}
+    return {"statpearls": info.model_dump(mode="json")}
 
 
 def run(
-    config: RagConfig, source: str, *, check_only: bool = False, settings: Settings | None = None
+    config: RagConfig,
+    source: str,
+    *,
+    check_only: bool = False,
+    ids_only: bool = False,
+    settings: Settings | None = None,
+    log: Callable[[str], None] | None = None,
 ) -> dict:
+    if ids_only and source != "pubmed":
+        raise ValueError("--ids-only applies to --source pubmed")
     settings = settings or load_settings()
     paths = rag_paths(config, settings)
     run_id = new_run_id(f"{config.run_name}_fetch_{source}")
@@ -92,7 +124,7 @@ def run(
     if source in ("statpearls", "all"):
         report.update(fetch_statpearls(config, paths, check_only=check_only))
     if source in ("pubmed", "all") and not check_only:
-        report.update(fetch_pubmed(config, paths, settings))
+        report.update(fetch_pubmed(config, paths, settings, ids_only=ids_only, log=log))
     if not check_only:
         write_run_manifest(
             paths.runs / run_id,
@@ -110,8 +142,20 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--config", required=True, help="configs/rag/full.yaml")
     parser.add_argument("--source", required=True, choices=["pubmed", "statpearls", "all"])
     parser.add_argument("--check-size", action="store_true", help="StatPearls: report the remote size only")
+    parser.add_argument(
+        "--ids-only", action="store_true", help="PubMed: run the searches, download no records"
+    )
     args = parser.parse_args(argv)
-    print(format_aggregates(run(load_config(args.config), args.source, check_only=args.check_size)))
+    if args.ids_only and args.source != "pubmed":
+        parser.error("--ids-only applies to --source pubmed")
+    report = run(
+        load_config(args.config),
+        args.source,
+        check_only=args.check_size,
+        ids_only=args.ids_only,
+        log=timestamped,
+    )
+    print(format_aggregates(report))
 
 
 if __name__ == "__main__":

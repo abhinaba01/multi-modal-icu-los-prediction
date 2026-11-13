@@ -12,6 +12,7 @@ system names, so the grading stays blind.
 from __future__ import annotations
 
 import argparse
+import sys
 import textwrap
 from collections.abc import Callable
 from dataclasses import replace
@@ -95,6 +96,11 @@ def main(argv: list[str] | None = None) -> None:
         sheet = rag_paths(config, load_settings()).eval / SHEET_FILE
     else:
         parser.error("give --config or --sheet")
+    # A character the console cannot show (a Greek letter, say) must not end a grading session.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
     run(sheet)
 
 

@@ -22,15 +22,20 @@ min_year: 1990
 max_year: 2026
 
 # English, with an abstract; not animal-only or paediatric-only studies (records not yet
-# MeSH-indexed are kept); no comments, editorials, letters, news, errata, retractions or
-# expressions of concern (iter_documents also drops these by publication type).
+# MeSH-indexed are kept); no comments, editorials, letters, news, errata, retracted articles
+# or expressions of concern (iter_documents also drops these by publication type).
+#
+# PubMed has no "AND NOT": it silently rewrites "A AND NOT B" into "A AND B" (checked
+# 2026-11-13: "sepsis[tiab] AND NOT editorial[pt]" found only the 2,033 sepsis editorials,
+# while "sepsis[tiab] NOT editorial[pt]" found the other 151,258). Exclusions are written
+# "NOT (...)", which PubMed evaluates left to right. Only publication types that exist in
+# PubMed's index may be named: "retraction of publication"[pt] does not (0 records).
 filters: >-
-  english[lang] AND hasabstract
-  AND NOT (animals[mh] NOT humans[mh])
-  AND NOT ((infant[mh] OR child[mh] OR adolescent[mh]) NOT adult[mh])
-  AND NOT (comment[pt] OR editorial[pt] OR letter[pt] OR news[pt] OR "newspaper article"[pt]
-  OR "published erratum"[pt] OR "retracted publication"[pt] OR "retraction of publication"[pt]
-  OR "expression of concern"[pt])
+  english[lang] AND hasabstract[text]
+  NOT (animals[mh] NOT humans[mh])
+  NOT ((infant[mh] OR child[mh] OR adolescent[mh]) NOT adult[mh])
+  NOT (comment[pt] OR editorial[pt] OR letter[pt] OR news[pt] OR "newspaper article"[pt]
+  OR "published erratum"[pt] OR "retracted publication"[pt] OR "expression of concern"[pt])
 
 blocks:
   icu: >-
@@ -235,8 +240,8 @@ queries:
     keys: ["static:admission"]
     term: >-
       ("Patient Admission"[MeSH] OR "Patient Transfer"[MeSH] OR "admission source"[tiab]
-      OR "emergency admission"[tiab] OR "unplanned admission"[tiab] OR "elective surgery"[tiab]
-      OR "type of admission"[tiab]) AND {icu} AND {outcome}
+      OR "emergency admission"[tiab] OR "unplanned admission"[tiab] OR "elective surgery"[tiab])
+      AND {icu} AND {outcome}
   - id: driver_demographics
     purpose: driver
     keys: ["static:demographics"]

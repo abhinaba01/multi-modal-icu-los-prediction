@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import threading
 import time
@@ -283,6 +284,89 @@ def test_collect_pmids_fails_when_slices_lose_records(tmp_path):
         collect_pmids(client, _query_set(["a"]), tmp_path)
 
 
+class NotingEutils(FakeEutils):
+    """A fake that also returns PubMed's translation and warnings for searches without dates."""
+
+    def post(self, url, data, timeout):
+        response = super().post(url, data, timeout)
+        if url.endswith("esearch.fcgi") and "mindate" not in data and data["retmax"] == "0":
+            payload = json.loads(response.body)
+            payload["esearchresult"].update(
+                querytranslation="translated " + data["term"][:12],
+                errorlist={"phrasesnotfound": ["Imaginary Heading"], "fieldsnotfound": []},
+                warninglist={"quotedphrasesnotfound": [], "outputmessages": ["Quoted phrase not found"]},
+            )
+            return TransportResponse(200, {}, json.dumps(payload).encode())
+        return response
+
+
+def test_collect_pmids_records_pubmeds_notes_and_logs_progress(tmp_path):
+    records = {"a": _dated(10, [date(2020, 1, 1)] * 3), "b": _dated(20, [date(2021, 1, 1)] * 2)}
+    client, _ = client_for(NotingEutils(records))
+    lines = []
+    collection = collect_pmids(client, _query_set(["a", "b"]), tmp_path, log=lines.append)
+    expected = {
+        "errors": {"phrasesnotfound": ["Imaginary Heading"]},  # empty lists are left out
+        "warnings": {"outputmessages": ["Quoted phrase not found"]},
+    }
+    assert collection.warnings == {"q_a": expected, "q_b": expected}
+    saved = json.loads((tmp_path / "esearch" / "q_a.json").read_text(encoding="utf-8"))
+    assert saved["notes"]["translation"].startswith("translated (a) AND") and saved["notes"]["errors"]
+    assert json.loads((tmp_path / "pmids.json").read_text())["warnings"]["q_b"] == expected
+    assert lines[0].startswith("[1/2] q_a: 3 records (searched); 3 unique so far; PubMed notes:")
+    assert lines[1].startswith("[2/2] q_b: 2 records (searched); 5 unique so far")
+    again = []
+    collect_pmids(client, _query_set(["a", "b"]), tmp_path, log=again.append)
+    assert "(cached)" in again[0] and "(cached)" in again[1]  # the notes come back from the cache
+    plain, _ = client_for(FakeEutils(records))
+    assert collect_pmids(plain, _query_set(["a"]), tmp_path / "plain").warnings == {}  # nothing to report
+
+
+def test_fetch_command_ids_only_first_then_the_records(tmp_path, monkeypatch, capsys):
+    from fate_icu.rag import fetch
+    from fate_icu.rag.config import load_config
+    from fate_icu.utils.env import load_settings
+
+    records = {"a": _dated(10, [date(2020, 1, 1)] * 3), "b": _dated(20, [date(2021, 1, 1)] * 2)}
+    transport = NotingEutils(records)
+    monkeypatch.setattr(
+        fetch,
+        "eutils_client",
+        lambda settings: EutilsClient(email=EMAIL, transport=transport, sleep=lambda s: None),
+    )
+    monkeypatch.setattr(fetch, "load_pubmed_queries", lambda path: _query_set(["a", "b"]))
+    monkeypatch.setenv("FATE_RAG_DIR", str(tmp_path / "rag"))
+    for name in ("OneDrive", "OneDriveConsumer", "OneDriveCommercial"):
+        monkeypatch.delenv(name, raising=False)
+    settings = load_settings(env_file=tmp_path / "none.env")
+    config = load_config("configs/rag/full.yaml")
+    efetch = tmp_path / "rag" / "raw" / "pubmed" / "efetch"
+
+    lines = []
+    ids = fetch.run(config, "pubmed", ids_only=True, settings=settings, log=lines.append)["pubmed"]
+    assert (ids["searches"], ids["unique_pmids"], ids["batches_to_fetch"]) == (2, 5, 1)
+    assert ids["ids_per_search"] == {"q_a": 3, "q_b": 2} and set(ids["searches_with_pubmed_notes"]) == {
+        "q_a",
+        "q_b",
+    }
+    assert "fetch" not in ids and not efetch.exists() and "without --ids-only" in ids["next_step"]
+
+    searches_so_far = len([r for r in transport.requests if r[0] == "esearch.fcgi"])
+    full = fetch.run(config, "pubmed", settings=settings, log=lines.append)["pubmed"]
+    assert (
+        full["fetch"]["pmids_found"] == 5
+        and full["fetch"]["fetched"] == 1
+        and len(list(efetch.glob("batch-*.xml"))) == 1
+    )
+    assert len([r for r in transport.requests if r[0] == "esearch.fcgi"]) == searches_so_far  # not repeated
+    assert "(cached)" in lines[2] and not any("EMAIL" in line or EMAIL in line for line in lines)
+
+    with pytest.raises(ValueError, match="--ids-only"):
+        fetch.run(config, "statpearls", ids_only=True, settings=settings)
+    fetch.timestamped("hello")
+    assert capsys.readouterr().out.strip().endswith(" hello")
+
+
 # --- records --------------------------------------------------------------------------
 
 
@@ -293,7 +377,7 @@ def test_fetch_records_batches_resume_and_parallel_equals_serial(tmp_path):
     report = fetch_records(client, list(reversed(pmids)), serial_dir, batch_size=3)
     assert (report.batches, report.fetched, report.reused, report.pmids_found) == (4, 4, 0, 10)
     files = sorted(p.name for p in (serial_dir / "efetch").glob("batch-*.xml"))
-    assert files == [batch_name(i, pmids[3 * i : 3 * i + 3]) for i in range(4)]
+    assert files == [batch_name(pmids[3 * i : 3 * i + 3]) for i in range(4)]
     assert not list((serial_dir / "efetch").glob("*.tmp*"))
     assert fetch_records(client, pmids, serial_dir, batch_size=3).fetched == 0  # resumed
     (serial_dir / "efetch" / files[1]).unlink()
@@ -305,6 +389,83 @@ def test_fetch_records_batches_resume_and_parallel_equals_serial(tmp_path):
         assert (parallel_dir / "efetch" / name).read_bytes() == (
             tmp_path / "serial2" / "efetch" / name
         ).read_bytes()
+
+
+def test_fetch_records_logs_progress(tmp_path):
+    client = EutilsClient(email=EMAIL, transport=FakeEutils(), sleep=lambda s: None)
+    lines = []
+    fetch_records(client, list(range(1, 61)), tmp_path, batch_size=2, max_workers=3, log=lines.append)
+    assert lines[0] == "60 of 60 records to fetch in 30 batches (0 already on disk or unavailable)"
+    assert lines[1:] == ["fetched 25 / 30 batches", "fetched 30 / 30 batches"]
+    again = []
+    fetch_records(client, list(range(1, 61)), tmp_path, batch_size=2, log=again.append)
+    assert again == ["0 of 60 records to fetch in 0 batches (60 already on disk or unavailable)"]
+
+
+def _requested(transport):
+    return {
+        int(i)
+        for endpoint, data in transport.requests
+        if endpoint == "efetch.fcgi"
+        for i in data["id"].split(",")
+    }
+
+
+def test_fetch_records_downloads_only_what_is_new(tmp_path):
+    transport = FakeEutils(missing={7})
+    client, _ = client_for(transport)
+    first = fetch_records(client, list(range(1, 201)), tmp_path, batch_size=50)
+    assert (first.batches, first.fetched, first.reused, first.pmids_found, first.pmids_missing) == (
+        4,
+        4,
+        0,
+        199,
+        1,
+    )
+
+    transport.requests.clear()  # more searches added: 60 more PMIDs, and PMID 7 is not asked for again
+    grown = fetch_records(client, list(range(1, 261)), tmp_path, batch_size=50)
+    assert (grown.batches, grown.fetched, grown.reused, grown.pmids_found) == (6, 2, 4, 259)
+    assert _requested(transport) == set(range(201, 261))
+
+    transport.requests.clear()  # a search removed, and a different set of PMIDs: nothing to download
+    smaller = fetch_records(client, list(range(2, 152)), tmp_path, batch_size=7)
+    assert (smaller.batches, smaller.fetched, smaller.reused) == (4, 0, 4) and not transport.requests
+    assert smaller.pmids_found == 149 and smaller.pmids_missing == 1  # PMID 7 stays unavailable
+    index = json.loads((tmp_path / "efetch" / "index.json").read_text(encoding="utf-8"))
+    assert index["unavailable"] == [7] and len(index["files"]) == 4
+    assert all(entry["retrieved_on"] for entry in index["files"].values())
+
+
+def test_fetch_records_counts_book_chapters_as_found(tmp_path):
+    book = "<PubmedBookArticle><BookDocument><PMID Version='1'>3</PMID></BookDocument></PubmedBookArticle>"
+
+    class WithBooks(FakeEutils):
+        def post(self, url, data, timeout):  # PMID 3 comes back as a book chapter, as StatPearls does
+            if not url.endswith("efetch.fcgi"):
+                return super().post(url, data, timeout)
+            ids = [int(i) for i in data["id"].split(",")]
+            articles = _articles([i for i in ids if i != 3]).decode().replace("</PubmedArticleSet>", "")
+            return TransportResponse(
+                200, {}, (articles + (book if 3 in ids else "") + "</PubmedArticleSet>").encode()
+            )
+
+    client, _ = client_for(WithBooks())
+    report = fetch_records(client, list(range(1, 201)), tmp_path, batch_size=100)
+    assert (report.pmids_found, report.pmids_missing) == (200, 0)  # the chapter counts as found
+    records = [r for f in (tmp_path / "efetch").glob("batch-*.xml") for r in parse_pubmed_xml(f.read_bytes())]
+    chapter = next(r for r in records if r.pmid == 3)
+    assert chapter.kind == "book" and exclusion_reason(chapter) == "book_article"
+
+
+def test_fetch_records_refuses_a_pmid_in_two_batch_files(tmp_path):
+    client = EutilsClient(email=EMAIL, transport=FakeEutils(), sleep=lambda s: None)
+    efetch = tmp_path / "efetch"
+    efetch.mkdir()
+    (efetch / "batch-000000001-0003-aaaaaaaa.xml").write_bytes(_articles([1, 2, 3]))
+    (efetch / "batch-000000003-0003-bbbbbbbb.xml").write_bytes(_articles([3, 4, 5]))
+    with pytest.raises(RuntimeError, match="PMID 3 is in two batch files"):
+        fetch_records(client, [1, 2, 3, 4, 5], tmp_path)
 
 
 def test_fetch_records_missing_threshold(tmp_path):
@@ -324,7 +485,9 @@ def _fixture_records():
 
 def test_parse_fixture_records_every_field():
     records = _fixture_records()
-    assert sorted(records) == list(range(90000001, 90000013))  # book article and deletion skipped
+    # the book chapter is read (and excluded); the deletion notice is skipped
+    assert sorted(records) == [*range(90000001, 90000013), 90000098]
+    assert records[90000098].kind == "book" and records[90000001].kind == "article"
     first = records[90000001]
     assert first.title == "Early lactate clearance and length of stay in a synthetic intensive care cohort."
     assert first.abstract[0].startswith("BACKGROUND: Raised blood lactate") and len(first.abstract) == 4
@@ -367,6 +530,7 @@ def test_parse_fixture_records_every_field():
         (90000007, "publication_type:Editorial"),
         (90000009, "retracted"),
         (90000012, None),
+        (90000098, "book_article"),
     ],
 )
 def test_exclusion_reasons(pmid, reason):
@@ -406,7 +570,7 @@ def _cache(tmp_path, files):
 
 def test_iter_documents_filters_counts_and_detects_duplicates(tmp_path):
     cache = _cache(tmp_path / "ok", [FIXTURES / "batch_a.xml", FIXTURES / "batch_b.xml"])
-    wanted = set(range(90000001, 90000013)) | {90000050}
+    wanted = set(range(90000001, 90000013)) | {90000050, 90000098}
     documents, counts = iter_documents(cache, wanted, licence="L")
     assert [d.doc_id for d in documents] == [
         "90000001",
@@ -423,6 +587,7 @@ def test_iter_documents_filters_counts_and_detects_duplicates(tmp_path):
         "retracted": 2,
         "publication_type:Letter": 1,
         "publication_type:Editorial": 1,
+        "book_article": 1,
         "missing": 1,
     }
     assert (
@@ -450,6 +615,13 @@ def _balanced(term: str) -> bool:
     return depth == 0 and term.count('"') % 2 == 0
 
 
+def test_a_search_that_finds_nothing_is_an_error(tmp_path):
+    client, _ = client_for(NotingEutils({"a": _dated(10, [date(2020, 1, 1)] * 3)}))
+    with pytest.raises(EutilsError, match=r"search q_empty found no records.*translated.*Imaginary Heading"):
+        collect_pmids(client, _query_set(["a", "empty"]), tmp_path)
+    assert (tmp_path / "esearch" / "q_a.json").exists()  # the good search is kept for the next run
+
+
 def test_the_search_file_covers_every_driver_key_and_topic(variables, contract):
     query_set = load_pubmed_queries()
     served = {k for q in query_set.queries if q.purpose == "driver" for k in q.keys}
@@ -468,6 +640,9 @@ def test_the_search_file_covers_every_driver_key_and_topic(variables, contract):
     for query in query_set.queries:
         full = query_set.full_term(query)
         assert _balanced(full) and "{" not in full and "}" not in full, query.id
+        # PubMed silently turns "A AND NOT B" into "A AND B": exclusions must be written "NOT"
+        assert not re.search(r"\b(AND|OR)\s+NOT\b", full, re.IGNORECASE), query.id
+        assert "retraction of publication" not in full and "type of admission" not in full, query.id
         if query.purpose == "driver":
             assert "Intensive Care Units" in full and "Length of Stay" in full, query.id
     assert len(query_set.sha256) == 64

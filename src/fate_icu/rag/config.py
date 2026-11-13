@@ -76,7 +76,7 @@ class Sources(_Strict):
 
 class Chunking(_Strict):
     max_tokens: int = 300
-    min_tokens: int = 5
+    min_tokens: int = 20  # shorter chunks are list fragments with no statement to cite (<1% of StatPearls)
     counter: Literal["medcpt", "words"] = "medcpt"  # medcpt = the article encoder's tokenizer
 
 
