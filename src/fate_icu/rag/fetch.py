@@ -15,7 +15,13 @@ Both are sent only to NCBI and never printed or logged.
 StatPearls: the NCBI Bookshelf archive into ``<FATE_RAG_DIR>/raw/statpearls/``.
 
 Both steps resume where they stopped: run the same command again after an interruption.
-Guideline PDFs are downloaded by hand (docs/lab_runbook.md, Stage 5).
+
+Guideline PDFs are downloaded by hand into ``<FATE_RAG_DIR>/raw/guidelines/``:
+
+    python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source guidelines
+
+creates that folder and lists, for each guideline in the config, the file name it expects,
+whether the file is there, and whether its licence has been confirmed (docs/lab_runbook.md).
 """
 
 from __future__ import annotations
@@ -26,7 +32,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from fate_icu.rag.config import RagConfig, RagPaths, load_config, rag_paths, repo_path
+from fate_icu.rag.config import UNCONFIRMED, RagConfig, RagPaths, load_config, rag_paths, repo_path
 from fate_icu.rag.sources.eutils import EutilsClient
 from fate_icu.rag.sources.pubmed import collect_pmids, fetch_records, load_pubmed_queries
 from fate_icu.rag.sources.statpearls import download, remote_size
@@ -106,6 +112,28 @@ def fetch_statpearls(config: RagConfig, paths: RagPaths, *, check_only: bool) ->
     return {"statpearls": info.model_dump(mode="json")}
 
 
+def check_guidelines(config: RagConfig, paths: RagPaths) -> dict[str, Any]:
+    """Create the guidelines folder and report which configured files are in it.
+
+    Nothing is downloaded: the PDFs come from the user (each publisher's page states its licence).
+    """
+    source = config.sources.guidelines
+    folder = repo_path(source.dir) if source.dir else paths.raw_guidelines
+    folder.mkdir(parents=True, exist_ok=True)
+    files: dict[str, Any] = {}
+    for spec in source.items:
+        path = folder / spec.file
+        files[spec.id] = {
+            "save_as": spec.file,
+            "present": path.is_file(),
+            "size_mb": round(path.stat().st_size / 1e6, 2) if path.is_file() else None,
+            "licence_confirmed": not spec.licence.strip().upper().startswith(UNCONFIRMED),
+            "where": spec.url,
+        }
+    ready = bool(files) and all(f["present"] and f["licence_confirmed"] for f in files.values())
+    return {"guidelines": {"folder": str(folder), "ready": ready, "files": files}}
+
+
 def run(
     config: RagConfig,
     source: str,
@@ -121,6 +149,8 @@ def run(
     paths = rag_paths(config, settings)
     run_id = new_run_id(f"{config.run_name}_fetch_{source}")
     report: dict[str, Any] = {"run_id": run_id}
+    if source == "guidelines":
+        return {**report, **check_guidelines(config, paths)}
     if source in ("statpearls", "all"):
         report.update(fetch_statpearls(config, paths, check_only=check_only))
     if source in ("pubmed", "all") and not check_only:
@@ -140,7 +170,7 @@ def run(
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", required=True, help="configs/rag/full.yaml")
-    parser.add_argument("--source", required=True, choices=["pubmed", "statpearls", "all"])
+    parser.add_argument("--source", required=True, choices=["pubmed", "statpearls", "all", "guidelines"])
     parser.add_argument("--check-size", action="store_true", help="StatPearls: report the remote size only")
     parser.add_argument(
         "--ids-only", action="store_true", help="PubMed: run the searches, download no records"

@@ -168,6 +168,41 @@ def test_index_version_covers_corpus_bm25_and_encoders():
     )  # bank, not index
 
 
+def test_fetch_guidelines_creates_the_folder_and_says_what_is_missing(tmp_path, monkeypatch):
+    settings = _settings(tmp_path, monkeypatch)
+    config = load_config("configs/rag/full.yaml")
+    folder = tmp_path / "rag" / "raw" / "guidelines"
+    assert not folder.exists()
+
+    report = fetch.run(config, "guidelines", settings=settings)["guidelines"]
+    assert folder.is_dir() and report["folder"] == str(folder) and report["ready"] is False
+    assert list(report["files"]) == ["ssc2021", "kdigo_aki_2012", "esicm_ards_2023", "padis_2018"]
+    first = report["files"]["ssc2021"]
+    assert (first["save_as"], first["present"], first["size_mb"], first["licence_confirmed"]) == (
+        "ssc2021.pdf",
+        False,
+        None,
+        False,
+    )
+    assert first["where"].startswith("https://doi.org/")
+
+    (folder / "ssc2021.pdf").write_bytes(b"%PDF-1.4 stand-in")
+    again = fetch.run(config, "guidelines", settings=settings)["guidelines"]
+    assert again["files"]["ssc2021"]["present"] and again["files"]["kdigo_aki_2012"]["present"] is False
+
+    confirmed = [g.model_copy(update={"licence": "CC BY-NC 4.0"}) for g in config.sources.guidelines.items]
+    done = config.model_copy(
+        update={
+            "sources": config.sources.model_copy(
+                update={"guidelines": config.sources.guidelines.model_copy(update={"items": confirmed})}
+            )
+        }
+    )
+    for spec in confirmed:
+        (folder / spec.file).write_bytes(b"%PDF-1.4 stand-in")
+    assert fetch.run(done, "guidelines", settings=settings)["guidelines"]["ready"] is True
+
+
 def test_fetch_needs_the_ncbi_email(tmp_path, monkeypatch):
     settings = _settings(tmp_path, monkeypatch)
     with pytest.raises(SystemExit, match="NCBI_EMAIL"):

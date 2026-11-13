@@ -258,12 +258,19 @@ the model-heavy step. The lab only receives the finished index and checks it.
     Management); it makes the download about 3 times faster.
 - Download the four guideline PDFs into `<FATE_RAG_DIR>\raw\guidelines\` under these names:
 
-  | File | Guideline |
-  |---|---|
-  | `ssc2021.pdf` | Surviving Sepsis Campaign 2021 (Evans et al., Intensive Care Med 2021) |
-  | `kdigo_aki_2012.pdf` | KDIGO Clinical Practice Guideline for Acute Kidney Injury (2012) |
-  | `esicm_ards_2023.pdf` | ESICM guidelines on ARDS (Grasselli et al., Intensive Care Med 2023) |
-  | `padis_2018.pdf` | PADIS guideline (Devlin et al., Crit Care Med 2018) |
+  | File | Guideline | Where (DOIs checked against Crossref on 2026-11-13) |
+  |---|---|---|
+  | `ssc2021.pdf` | Surviving Sepsis Campaign 2021 (Evans et al., Intensive Care Med 2021) | https://doi.org/10.1007/s00134-021-06506-y |
+  | `kdigo_aki_2012.pdf` | KDIGO Clinical Practice Guideline for Acute Kidney Injury (2012) | https://kdigo.org/guidelines/acute-kidney-injury/ |
+  | `esicm_ards_2023.pdf` | ESICM guidelines on ARDS (Grasselli et al., Intensive Care Med 2023) | https://doi.org/10.1007/s00134-023-07050-7 (Crossref lists CC BY-NC 4.0) |
+  | `padis_2018.pdf` | PADIS guideline (Devlin et al., Crit Care Med 2018) | https://doi.org/10.1097/CCM.0000000000003299 |
+
+  The command below creates the folder and shows which files are still missing and which
+  licences are still unconfirmed; run it again after saving the files:
+
+  ```
+  uv run python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source guidelines
+  ```
 
   Then, in `configs/rag/full.yaml`, replace each "TO CONFIRM" licence with the licence shown
   on the publisher's page, and check each citation against its PDF.
