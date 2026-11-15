@@ -185,6 +185,9 @@ Nothing credentialed is on this laptop (checked 2026-11-15): the demo is open da
    pg_dump -Fc -d mimiciv_demo -f D:\fate-data\transfer\mimiciv_demo.dump
    ```
 
+   After recreating either file, run the `make` command for `D:\fate-data` from step 2 again:
+   its list holds the hash of the old file.
+
 4. **Copy to an external drive** (or any storage you trust), keeping the folder names:
 
    - `D:\fate-data\` (4.8 GB; `rag_dryrun_*` may be left out)
