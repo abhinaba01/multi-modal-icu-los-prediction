@@ -684,3 +684,19 @@ build would have run on an empty corpus, or on a corpus of editorials.
 **Alternatives.** Keep every section; keep short passages.
 **Reason.** Checked on the real data rather than assumed. Both choices are cheap to reverse
 until the index and the relevance grades exist, and expensive afterwards.
+
+## D-044 · 2026-11-15 · Moving the project between computers
+
+**Decision.**
+- The code goes through a private git remote; a `git bundle` is the backup copy.
+- The Stage 5 downloads are copied, not fetched again, because PubMed changes daily and NCBI
+  replaces the StatPearls archive (the corpus is pinned by `pmids.json` and the archive size).
+- Folders are copied together with a `SHA256SUMS.txt` (`fate_icu.utils.checksums`, the format of
+  `sha256sum`, hashes of raw bytes) and checked on arrival. `binary_sha256` moved to
+  `utils/hashing.py` for this; `rag/version.py` still exports it.
+- The demo database can be restored from a `pg_dump` (PostgreSQL 18 or newer) or rebuilt from
+  `C:\mimic` (any version from 14).
+- Steps are in `docs/laptop_setup.md`, section 6.
+
+**Alternatives.** Zip the repository; re-download the data.
+**Reason.** A zip hides damage and drops history; re-downloading would change the corpus.

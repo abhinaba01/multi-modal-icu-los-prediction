@@ -27,6 +27,42 @@ Each finished stage gets a summary of at most 10 lines here.
   `realdata`, reproduce the internship with the legacy scripts, then freeze the
   long-stay threshold.
 
+## Resume here: Stage 5 (written 2026-11-15, before moving to another computer)
+
+State: all Stage 5 code is committed and tested. The public data is downloaded in
+`D:\fate-data\rag\raw` (StatPearls, 151,341 PubMed records, the four guideline PDFs). The
+full index is not built. What remains, in order:
+
+1. **Guideline cut points.** `guidelines.py` now detects headings in context and supports
+   `start_at`, `end_at` (regexes matched at the start of a whole line, case-insensitive) and
+   `drop_blocks` (first line, last line, length limit). Its 21 existing tests pass; tests for the
+   new fields and for the heading rules are still to be written, and the cut points are not yet
+   in `configs/rag/full.yaml`. They were found by reading the four PDFs:
+   - `ssc2021`: `start_at: ^Introduction$`, `end_at: ^Supplementary Information$`
+   - `esicm_ards_2023`: `start_at: ^Introduction$`, `end_at: ^Supplementary Information$`
+   - `kdigo_aki_2012`: `start_at: ^Summary of Recommendation Statements$`,
+     `end_at: ^Biographic and Disclosure Information$`, and `drop_blocks` from
+     `^SUPPLEMENTARY MATERIAL$` to `^Supplementary material is linked to` (a box on many pages)
+   - `padis_2018`: `start_at: ^Objective:`, `end_at: ^ACKNOWLEDGMENTS$`
+
+   Then parse the four PDFs again and look at the sections (front matter, references and
+   biographies must be gone, recommendations must stay whole). pypdf prints a font warning
+   per page (fontTools is not installed); the parser now counts them in `meta`.
+2. **Licences**, which the user must confirm before the build will run (it stops while one
+   says "TO CONFIRM"). What each PDF states: `ssc2021` "(c) 2021 ESICM and SCCM", no open
+   licence in the PDF; `kdigo_aki_2012` "(c) 2012 KDIGO", none; `esicm_ards_2023` Creative
+   Commons Attribution-NonCommercial (Crossref: CC BY-NC 4.0); `padis_2018` "(c) 2018 SCCM and
+   Wolters Kluwer Health, all rights reserved".
+3. **Build:** `build_corpus` (about 15 minutes), `build_index --part bm25`, `gpu_bundle`, the
+   Kaggle GPU step (1 to 1.5 hours), `build_index --part dense`, `verify`, then the user grades
+   the pooled passages (docs/lab_runbook.md, Stage 5). Expected size: about 425,000 passages.
+4. **Open questions for the user:** keep or restore the dropped StatPearls section "Enhancing
+   Healthcare Team Outcomes", and the 20-token minimum (D-043); open
+   `https://www.ncbi.nlm.nih.gov/books/n/statpearls/article-22481/` in a browser, which should
+   show "Anatomy, Hair".
+
+Afterwards: Stage 3 (docs/stages.md).
+
 ## Stage summaries
 
 ### Stage 5: RAG layer (code and smoke run done, 2026-11-13; full index pending)

@@ -15,6 +15,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fate_icu.utils.hashing import binary_sha256
+
 if TYPE_CHECKING:
     from fate_icu.rag.config import RagConfig
 
@@ -48,15 +50,6 @@ def index_payload(corpus_sha256: str, config: RagConfig) -> dict[str, Any]:
 def index_version(corpus_sha256: str, config: RagConfig) -> str:
     """16 hex characters identifying the index built from this corpus with this config."""
     return _sha256_json(index_payload(corpus_sha256, config))[:16]
-
-
-def binary_sha256(path: str | Path, chunk_size: int = 1 << 20) -> str:
-    """SHA-256 of a file's bytes (for binary files; ``utils.hashing`` normalises line endings)."""
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        while block := handle.read(chunk_size):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def files_sha256(root: str | Path, files: Iterable[Path]) -> dict[str, str]:

@@ -24,6 +24,18 @@ def file_sha256(path: str | Path) -> str:
     return hashlib.sha256(_normalised_bytes(Path(path))).hexdigest()
 
 
+def binary_sha256(path: str | Path, chunk_size: int = 1 << 20) -> str:
+    """SHA-256 of a file's raw bytes, read in chunks (no line-ending normalisation).
+
+    Use it for binary files and for checking copies; :func:`file_sha256` is for text.
+    """
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while block := handle.read(chunk_size):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def tree_sha256(root: str | Path, exclude_top_level: frozenset[str] = frozenset()) -> str:
     """SHA-256 over every file under ``root`` (relative path + normalised content).
 
