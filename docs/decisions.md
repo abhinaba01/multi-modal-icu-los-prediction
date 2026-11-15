@@ -700,3 +700,31 @@ until the index and the relevance grades exist, and expensive afterwards.
 
 **Alternatives.** Zip the repository; re-download the data.
 **Reason.** A zip hides damage and drops history; re-downloading would change the corpus.
+
+## D-045 · 2026-11-15 · Guideline cut points and three heading rules, from the real PDFs
+
+**Decision.**
+- Each guideline in `configs/rag/full.yaml` names where its content starts and ends
+  (`start_at`, `end_at`). This drops the author lists, the KDIGO tables of contents, the
+  acknowledgements, references, supplements and biographies. KDIGO also drops its
+  "Supplementary material" box and, as one-line `drop_blocks`, the journal lines on each
+  chapter's first page, which pypdf places inside sentences.
+- Never a heading: a line wholly in parentheses (KDIGO's "(Not Graded)" grades), a keyword used
+  as a label with a colon ("Recommendation: We suggest ..." in PADIS), and a line with a numeric
+  citation ("(47)", "[173, 180]"). Before this, three PADIS recommendations lost their first
+  line into a section title, and 28 KDIGO grades became titles.
+- "Sponsorship" and "Disclaimer" join the excluded headings (5 copies of KDIGO's sponsor list
+  and disclaimer).
+- Result: SSC 2021 14 sections and 30,461 words; KDIGO 93 and 68,792; ESICM ARDS 6 and
+  15,399; PADIS 46 and 30,138. A text check finds every recommendation checked whole and no
+  references, acknowledgements, conflict statements, licence notes or biographies.
+
+**Known limit.** Table cells are still sometimes taken as headings ("Yes", "65mm Hg",
+"Interventional Arm Control Arm"), so a few passages carry a meaningless section title. The
+text and the page locator stay correct; only the section label is wrong. Fixing it needs
+table detection, which is not worth it for four documents.
+
+**Alternatives.** Page ranges (`first_page`, `last_page`), which cannot remove material in the
+middle of a document; heading detection by font size.
+**Reason.** The section titles and text become passage citations. A recommendation cut in two
+would be retrieved without its start, and boilerplate would compete with the evidence.

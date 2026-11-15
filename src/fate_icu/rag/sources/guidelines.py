@@ -10,7 +10,10 @@ two-column journal page in reading order. Then:
 * headings are short lines (at most 12 words, no final full stop): numbered with a short
   or Title Case remainder ("2.3 Urine output"), introduced by a keyword ("Recommendation
   12", "Chapter 3"), or in Title Case or capitals. Sentence-case headings without a number
-  are not detected; their text stays in the previous section, so nothing is lost. A line
+  are not detected; their text stays in the previous section, so nothing is lost. Never a
+  heading: a line wholly in parentheses (a grade, "(Not Graded)"), a line with a numeric
+  citation ("(47)", "[173, 180]"), or a keyword used as a label ("Recommendation: We
+  suggest ..."), so a recommendation's first line stays in its text. A line
   only counts as a heading in context: the line before it must end a sentence (or be a
   heading itself, unless the heading starts with a keyword) and the line after it must not
   continue in lower case, so a Title-Case phrase wrapped inside a sentence stays text;
@@ -56,6 +59,8 @@ DEFAULT_EXCLUDED_HEADINGS = (
     "Author information",
     "Supplementary information",
     "Supplementary Material",
+    "Sponsorship",
+    "Disclaimer",
 )
 REFERENCE_HEADINGS = frozenset({"references", "bibliography"})
 HEADER_SHARE, HEADER_MIN_PAGES = 0.3, 3
@@ -63,6 +68,10 @@ HEADER_SHARE, HEADER_MIN_PAGES = 0.3, 3
 _NUMBER_PREFIX = re.compile(r"^(\d+(?:\.\d+)*\.?)\s+(\S.*)$")
 _KEYWORD = re.compile(r"^(?:\d+(?:\.\d+)*\.?\s+)?(?:Recommendation|Chapter|Section|Appendix|Part|Annex)\b")
 _CHAPTER = re.compile(r"^(?:\d+(?:\.\d+)*\.?\s+)?(?:Chapter|Section|Appendix|Part|Annex)\b")
+# "Recommendation: We suggest ..." is a label opening a sentence, not a heading
+_LABEL = re.compile(r"^(?:Recommendation|Chapter|Section|Appendix|Part|Annex)\s*:")
+# a numeric citation, "(47)" or "[173, 180-181]": headings do not cite
+_CITATION = re.compile(r"[(\[]\d+(?:\s*[,–-]\s*\d+)*[)\]]")
 _PAGE_NUMBER = re.compile(r"^(?:page\s*)?\d+(?:\s*(?:of|/)\s*\d+)?$", re.IGNORECASE)
 _SMALL_WORDS = frozenset(
     {"a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "with", "vs"}
@@ -138,6 +147,10 @@ def _title_like(text: str) -> bool:
     return bool(significant) and all(w[0].isupper() for w in significant)
 
 
+def _keyword_heading(text: str) -> bool:
+    return bool(_KEYWORD.match(text)) and not _LABEL.match(text)
+
+
 def _is_heading(line: str) -> bool:
     text = line.strip()
     words = text.split()
@@ -145,7 +158,9 @@ def _is_heading(line: str) -> bool:
         return False
     if not any(c.isalpha() for c in text):
         return False
-    if _KEYWORD.match(text):
+    if (text.startswith("(") and text.endswith(")")) or _CITATION.search(text):
+        return False  # a grade such as "(Not Graded)", or body text that cites
+    if _keyword_heading(text):
         return True
     numbered = _NUMBER_PREFIX.match(text)
     if numbered:
@@ -178,7 +193,7 @@ def _heading_in_context(lines: list[tuple[str, str]], i: int) -> bool:
     last_word = line.split()[-1].lower().strip(",;:")
     if line.endswith("-") or last_word in _SMALL_WORDS:
         return False  # a phrase cut at the end of a line
-    if _KEYWORD.match(line):
+    if _keyword_heading(line):
         return True
     previous = _neighbour(lines, i - 1, -1)
     return previous is None or bool(_SENTENCE_END.search(previous)) or _is_heading(previous)

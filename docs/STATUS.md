@@ -16,7 +16,7 @@ Each finished stage gets a summary of at most 10 lines here.
   end to end on `mimiciv_demo`.
 - **Stage 1:** built 2026-11-02. 210 tests pass (2 `realdata` skipped); the smoke link
   (demo cohort, synthetic metadata) and the cache step (public images) run end to end.
-- **Stage 5:** code and smoke run done 2026-11-13; 373 tests pass (2 `realdata` skipped). The
+- **Stage 5:** code and smoke run done 2026-11-13; 406 tests pass on 2026-11-15 (2 `realdata` skipped). The
   public data is downloaded into `D:\fate-data\rag`: StatPearls (2.05 GB) and 151,341 PubMed
   records. The full index still needs the four guideline PDFs, the Kaggle GPU step and your
   relevance grades (`docs/lab_runbook.md`, Stage 5).
@@ -27,27 +27,17 @@ Each finished stage gets a summary of at most 10 lines here.
   `realdata`, reproduce the internship with the legacy scripts, then freeze the
   long-stay threshold.
 
-## Resume here: Stage 5 (written 2026-11-15, before moving to another computer)
+## Resume here: Stage 5 (updated 2026-11-15, on the new computer)
 
-State: all Stage 5 code is committed and tested. The public data is downloaded in
+State: the project moved to the new computer and passes there (406 tests, 2 `realdata`
+skipped; the demo database is restored; `D:\fate-data` checks ok). The public data is in
 `D:\fate-data\rag\raw` (StatPearls, 151,341 PubMed records, the four guideline PDFs). The
 full index is not built. What remains, in order:
 
-1. **Guideline cut points.** `guidelines.py` now detects headings in context and supports
-   `start_at`, `end_at` (regexes matched at the start of a whole line, case-insensitive) and
-   `drop_blocks` (first line, last line, length limit). Its 21 existing tests pass; tests for the
-   new fields and for the heading rules are still to be written, and the cut points are not yet
-   in `configs/rag/full.yaml`. They were found by reading the four PDFs:
-   - `ssc2021`: `start_at: ^Introduction$`, `end_at: ^Supplementary Information$`
-   - `esicm_ards_2023`: `start_at: ^Introduction$`, `end_at: ^Supplementary Information$`
-   - `kdigo_aki_2012`: `start_at: ^Summary of Recommendation Statements$`,
-     `end_at: ^Biographic and Disclosure Information$`, and `drop_blocks` from
-     `^SUPPLEMENTARY MATERIAL$` to `^Supplementary material is linked to` (a box on many pages)
-   - `padis_2018`: `start_at: ^Objective:`, `end_at: ^ACKNOWLEDGMENTS$`
-
-   Then parse the four PDFs again and look at the sections (front matter, references and
-   biographies must be gone, recommendations must stay whole). pypdf prints a font warning
-   per page (fontTools is not installed); the parser now counts them in `meta`.
+1. ~~**Guideline cut points.**~~ Done 2026-11-15 (D-045): the cut points are in
+   `configs/rag/full.yaml`, three heading rules were added after reading the parsed PDFs, and
+   the new fields and rules have tests (47 guideline tests). Table cells sometimes still
+   become section titles (known limit in D-045).
 2. **Licences**, which the user must confirm before the build will run (it stops while one
    says "TO CONFIRM"). What each PDF states: `ssc2021` "(c) 2021 ESICM and SCCM", no open
    licence in the PDF; `kdigo_aki_2012` "(c) 2012 KDIGO", none; `esicm_ards_2023` Creative

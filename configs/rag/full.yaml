@@ -16,6 +16,9 @@ sources:
     # PDFs you download into <FATE_RAG_DIR>/raw/guidelines/ under these file names.
     # Check each citation against the PDF, and replace every "TO CONFIRM" licence with the
     # licence stated on the publisher's page: the build stops while one is unconfirmed.
+    # start_at / end_at / drop_blocks: regexes matched at the start of a whole line,
+    # case-insensitive, found by reading each PDF (2026-11-15). They drop the front matter,
+    # references, supplements and biographies; a marker that matches nothing stops the build.
     items:
       - id: ssc2021
         title: "Surviving Sepsis Campaign: international guidelines for management of sepsis and septic shock 2021"
@@ -24,6 +27,8 @@ sources:
         file: ssc2021.pdf
         licence: "TO CONFIRM: see the article page"
         year: 2021
+        start_at: "^Introduction$"
+        end_at: "^Supplementary Information$"
       - id: kdigo_aki_2012
         title: "KDIGO Clinical Practice Guideline for Acute Kidney Injury"
         citation: "KDIGO Acute Kidney Injury Work Group. Kidney Int Suppl. 2012;2(1):1-138."
@@ -31,6 +36,16 @@ sources:
         file: kdigo_aki_2012.pdf
         licence: "TO CONFIRM: see kdigo.org"
         year: 2012
+        start_at: "^Summary of Recommendation Statements$"
+        end_at: "^Biographic and Disclosure Information$"
+        drop_blocks:              # a boxed note repeated on many pages
+          - start: "^SUPPLEMENTARY MATERIAL$"
+            end: "^Supplementary material is linked to"
+          # the journal lines on each chapter's first page, often inside a sentence
+          # (one-line blocks: start and end match the same line)
+          - {start: "^Kidney International Supplements \\(2012\\)", end: "^Kidney International Supplements \\(2012\\)"}
+          - {start: "^http://www\\.kidney-international\\.org", end: "^http://www\\.kidney-international\\.org"}
+          - {start: "^& 2012 KDIGO$", end: "^& 2012 KDIGO$"}
       - id: esicm_ards_2023
         title: "ESICM guidelines on acute respiratory distress syndrome: definition, phenotyping and respiratory support strategies"
         citation: "Grasselli G, Calfee CS, Camporota L, et al. Intensive Care Med. 2023;49(7):727-759."
@@ -38,6 +53,8 @@ sources:
         file: esicm_ards_2023.pdf
         licence: "TO CONFIRM: see the article page"
         year: 2023
+        start_at: "^Introduction$"
+        end_at: "^Supplementary Information$"
       - id: padis_2018
         title: "Clinical practice guidelines for the prevention and management of pain, agitation/sedation, delirium, immobility, and sleep disruption in adult patients in the ICU"
         citation: "Devlin JW, Skrobik Y, Gelinas C, et al. Crit Care Med. 2018;46(9):e825-e873."
@@ -45,6 +62,8 @@ sources:
         file: padis_2018.pdf
         licence: "TO CONFIRM: see the article page"
         year: 2018
+        start_at: "^Objective:"
+        end_at: "^ACKNOWLEDGMENTS$"
 
 chunking:
   max_tokens: 300
