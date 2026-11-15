@@ -131,6 +131,12 @@ def test_gpu_bundle_collects_the_files(built):
     assert report["notebook_commands"][0].startswith("pip install -q transformers==")
 
 
+def _with_licences(config, licence):
+    items = [g.model_copy(update={"licence": licence}) for g in config.sources.guidelines.items]
+    guidelines = config.sources.guidelines.model_copy(update={"items": items})
+    return config.model_copy(update={"sources": config.sources.model_copy(update={"guidelines": guidelines})})
+
+
 def test_configs_and_guards(tmp_path, monkeypatch):
     full = load_config("configs/rag/full.yaml")
     smoke = load_config("configs/rag/smoke.yaml")
@@ -141,9 +147,12 @@ def test_configs_and_guards(tmp_path, monkeypatch):
         "esicm_ards_2023",
         "padis_2018",
     ]
+    # the four licences are confirmed (D-046); an unconfirmed one stops the build
+    assert not any(g.licence.upper().startswith("TO CONFIRM") for g in full.sources.guidelines.items)
     settings = _settings(tmp_path, monkeypatch)
+    unconfirmed = _with_licences(full, "TO CONFIRM: see the article page")
     with pytest.raises(RuntimeError, match="confirm the licence of ssc2021, kdigo_aki_2012"):
-        build_corpus._guidelines(full, rag_paths(full, settings))
+        build_corpus._guidelines(unconfirmed, rag_paths(unconfirmed, settings))
     monkeypatch.setenv("OneDrive", str(tmp_path))
     with pytest.raises(RuntimeError, match="outside OneDrive"):
         rag_paths(full, settings)
@@ -170,7 +179,7 @@ def test_index_version_covers_corpus_bm25_and_encoders():
 
 def test_fetch_guidelines_creates_the_folder_and_says_what_is_missing(tmp_path, monkeypatch):
     settings = _settings(tmp_path, monkeypatch)
-    config = load_config("configs/rag/full.yaml")
+    config = _with_licences(load_config("configs/rag/full.yaml"), "TO CONFIRM: see the article page")
     folder = tmp_path / "rag" / "raw" / "guidelines"
     assert not folder.exists()
 
@@ -190,15 +199,8 @@ def test_fetch_guidelines_creates_the_folder_and_says_what_is_missing(tmp_path, 
     again = fetch.run(config, "guidelines", settings=settings)["guidelines"]
     assert again["files"]["ssc2021"]["present"] and again["files"]["kdigo_aki_2012"]["present"] is False
 
-    confirmed = [g.model_copy(update={"licence": "CC BY-NC 4.0"}) for g in config.sources.guidelines.items]
-    done = config.model_copy(
-        update={
-            "sources": config.sources.model_copy(
-                update={"guidelines": config.sources.guidelines.model_copy(update={"items": confirmed})}
-            )
-        }
-    )
-    for spec in confirmed:
+    done = _with_licences(config, "CC BY-NC 4.0")
+    for spec in done.sources.guidelines.items:
         (folder / spec.file).write_bytes(b"%PDF-1.4 stand-in")
     assert fetch.run(done, "guidelines", settings=settings)["guidelines"]["ready"] is True
 

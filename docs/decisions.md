@@ -728,3 +728,23 @@ table detection, which is not worth it for four documents.
 middle of a document; heading detection by font size.
 **Reason.** The section titles and text become passage citations. A recommendation cut in two
 would be retrieved without its start, and boilerplate would compete with the evidence.
+
+## D-046 · 2026-11-15 · Guideline licences confirmed as the PDFs state them
+
+**Decision (your confirmation).** Each licence in `configs/rag/full.yaml` is the text the PDF
+states:
+- `ssc2021`: © 2021 ESICM and SCCM; no open licence in the PDF.
+- `kdigo_aki_2012`: © 2012 KDIGO; no open licence in the PDF.
+- `esicm_ards_2023`: CC BY-NC 4.0.
+- `padis_2018`: © 2018 SCCM and Wolters Kluwer Health, all rights reserved.
+
+The guidelines are used for private research retrieval: their passages sit in the index, and
+explanations quote them briefly with a citation. The PDFs and the passages are not
+redistributed. That matters for the three without an open licence, and CC BY-NC allows only
+non-commercial use. `fetch --source guidelines` now reports `ready: true`.
+
+**Alternatives.** Leave out the three guidelines without an open licence; use only open-access
+copies.
+**Reason.** These are the four guidelines chosen in D-035, and the use is the same as for the
+PubMed abstracts (`PUBMED_LICENCE`). The licence travels with every passage, so the use can be
+reviewed later.

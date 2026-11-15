@@ -16,6 +16,8 @@ sources:
     # PDFs you download into <FATE_RAG_DIR>/raw/guidelines/ under these file names.
     # Check each citation against the PDF, and replace every "TO CONFIRM" licence with the
     # licence stated on the publisher's page: the build stops while one is unconfirmed.
+    # The four licences below are as each PDF states them, confirmed by the user 2026-11-15
+    # (D-046): used for private research retrieval and short quotation with citation.
     # start_at / end_at / drop_blocks: regexes matched at the start of a whole line,
     # case-insensitive, found by reading each PDF (2026-11-15). They drop the front matter,
     # references, supplements and biographies; a marker that matches nothing stops the build.
@@ -25,7 +27,7 @@ sources:
         citation: "Evans L, Rhodes A, Alhazzani W, et al. Intensive Care Med. 2021;47(11):1181-1247."
         url: "https://doi.org/10.1007/s00134-021-06506-y"
         file: ssc2021.pdf
-        licence: "TO CONFIRM: see the article page"
+        licence: "(c) 2021 European Society of Intensive Care Medicine and Society of Critical Care Medicine; no open licence stated in the PDF"
         year: 2021
         start_at: "^Introduction$"
         end_at: "^Supplementary Information$"
@@ -34,7 +36,7 @@ sources:
         citation: "KDIGO Acute Kidney Injury Work Group. Kidney Int Suppl. 2012;2(1):1-138."
         url: "https://kdigo.org/guidelines/acute-kidney-injury/"
         file: kdigo_aki_2012.pdf
-        licence: "TO CONFIRM: see kdigo.org"
+        licence: "(c) 2012 KDIGO; no open licence stated in the PDF"
         year: 2012
         start_at: "^Summary of Recommendation Statements$"
         end_at: "^Biographic and Disclosure Information$"
@@ -51,7 +53,7 @@ sources:
         citation: "Grasselli G, Calfee CS, Camporota L, et al. Intensive Care Med. 2023;49(7):727-759."
         url: "https://doi.org/10.1007/s00134-023-07050-7"
         file: esicm_ards_2023.pdf
-        licence: "TO CONFIRM: see the article page"
+        licence: "CC BY-NC 4.0 (Creative Commons Attribution-NonCommercial 4.0 International)"
         year: 2023
         start_at: "^Introduction$"
         end_at: "^Supplementary Information$"
@@ -60,7 +62,7 @@ sources:
         citation: "Devlin JW, Skrobik Y, Gelinas C, et al. Crit Care Med. 2018;46(9):e825-e873."
         url: "https://doi.org/10.1097/CCM.0000000000003299"
         file: padis_2018.pdf
-        licence: "TO CONFIRM: see the article page"
+        licence: "(c) 2018 Society of Critical Care Medicine and Wolters Kluwer Health, Inc. All rights reserved"
         year: 2018
         start_at: "^Objective:"
         end_at: "^ACKNOWLEDGMENTS$"

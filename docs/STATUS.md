@@ -38,8 +38,9 @@ full index is not built. What remains, in order:
    `configs/rag/full.yaml`, three heading rules were added after reading the parsed PDFs, and
    the new fields and rules have tests (47 guideline tests). Table cells sometimes still
    become section titles (known limit in D-045).
-2. **Licences**, which the user must confirm before the build will run (it stops while one
-   says "TO CONFIRM"). What each PDF states: `ssc2021` "(c) 2021 ESICM and SCCM", no open
+2. ~~**Licences**~~: done 2026-11-15 (D-046). Recorded as each PDF states them; the
+   guidelines check reports `ready: true`. Earlier notes: the user had to confirm them before
+   the build would run (it stops while one says "TO CONFIRM"). What each PDF states: `ssc2021` "(c) 2021 ESICM and SCCM", no open
    licence in the PDF; `kdigo_aki_2012` "(c) 2012 KDIGO", none; `esicm_ards_2023` Creative
    Commons Attribution-NonCommercial (Crossref: CC BY-NC 4.0); `padis_2018` "(c) 2018 SCCM and
    Wolters Kluwer Health, all rights reserved".
