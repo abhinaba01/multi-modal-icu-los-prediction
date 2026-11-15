@@ -147,15 +147,18 @@ Nothing credentialed is on this laptop (checked 2026-11-15): the demo is open da
 
 ### A. On this laptop
 
-1. **Commit and push.** There is no git remote yet, so nothing has ever left this laptop. On
-   github.com create a new repository named `fate-icu`, set it to **Private**, and leave
-   "Add a README", ".gitignore" and "license" unticked. Then:
+1. **Commit and push.** The remote is `origin`,
+   <https://github.com/abhinaba01/multi-modal-icu-los-prediction> (first push on 2026-11-15).
+   Make sure it is **Private**: it was public when checked that day. On github.com open the
+   repository, then Settings, General, "Danger Zone", "Change visibility". The history holds no
+   credentialed data and no secrets, but it does hold the internship code, and every commit
+   carries your git name and email. Then:
 
    ```powershell
    Set-Location "C:\Users\LENOVO\OneDrive\Desktop\MTech Project(Abhinaba)\multi_modal_icu_los_prediction"
    git status                      # must say "nothing to commit, working tree clean"
-   git remote add origin https://github.com/<your-username>/fate-icu.git
-   git push -u origin main         # a browser window asks you to sign in to GitHub
+   git push                        # sends every commit made since the first push
+   git status -sb                  # the first line must not say "ahead"
    git ls-remote origin            # the first line must show the id that "git rev-parse HEAD" prints
    ```
 
@@ -208,7 +211,7 @@ Nothing credentialed is on this laptop (checked 2026-11-15): the demo is open da
    caused trouble on this laptop):
 
    ```powershell
-   git clone https://github.com/<your-username>/fate-icu.git C:\fate-icu
+   git clone https://github.com/abhinaba01/multi-modal-icu-los-prediction.git C:\fate-icu
    # without GitHub, from the bundle: git clone D:\fate-data\transfer\fate-icu.bundle C:\fate-icu
    Set-Location C:\fate-icu
    ```
@@ -260,7 +263,7 @@ Nothing credentialed is on this laptop (checked 2026-11-15): the demo is open da
 
    ```powershell
    $env:HF_HUB_OFFLINE = "1"     # proves the copied MedCPT models are used
-   uv run pytest                                                          # expect 0 failures, 2 skipped
+   uv run pytest        # no failures: 380 passed, 2 skipped on 2026-11-15 (29 more skip until .env and the database exist)
    uv run python -m fate_icu.tabular.run --config configs/tabular/smoke.yaml
    uv run python -m fate_icu.rag.fetch --config configs/rag/full.yaml --source guidelines
    uv run python -m fate_icu.rag.build_all --config configs/rag/smoke.yaml   # 7 minutes, real MedCPT on the CPU
