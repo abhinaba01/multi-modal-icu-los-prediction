@@ -1,0 +1,25 @@
+# Stage 3 smoke run: laptop CPU, open MIMIC-IV demo in PostgreSQL (mimiciv_demo), synthetic
+# MIMIC-CXR metadata and 4 public chest X-rays handed out by a hash of the study id.
+# Never use these numbers in results: smoke configs only prove the code runs end to end.
+run_name: models_smoke
+source: postgres
+require_frozen_threshold: false   # computes the train-split Q3 on the demo
+require_signal: false             # the demo train split leaves some static features constant
+seed: 666
+n_seeds: 2
+arms: [B0, B1, B2, B3, B4, B5, B6, M, M_transformer]
+model: {d: 32, heads: 4, layers: 1, dropout: 0.1}   # small network: the full config uses 256 / 2 layers
+train:
+  epochs: 5
+  batch_size: 16
+  patience: 5
+  allow_loss_fallback: true       # the demo validation split can hold one class only
+  device: cpu
+n_boot: 50
+timeseries_config: configs/timeseries/smoke.yaml
+cxr_config: configs/cxr/smoke.yaml
+images: fixtures
+xgb_n_estimators: 50
+n_jobs: 1
+cache: true
+strict_sofa: true

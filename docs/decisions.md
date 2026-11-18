@@ -748,3 +748,142 @@ copies.
 **Reason.** These are the four guidelines chosen in D-035, and the use is the same as for the
 PubMed abstracts (`PUBMED_LICENCE`). The licence travels with every passage, so the use can be
 reviewed later.
+
+## D-047 · 2026-11-16 · Stage 3: model family, inputs, training and evaluation
+
+**Decision.**
+- **Arms** (`models/arms.py`): B1 static MLP, B2 LSTM, B3 static + time series (concatenation +
+  MLP), B4 image only, B5 late fusion, B6 all three by concatenation, M attention fusion, plus
+  `M_transformer` (the Transformer time-series ablation). B0 is the existing adapter. B5 is the
+  mean of the B1, B2 and B4 logits over the unimodal models a stay can use (and of their
+  log1p LOS), so a stay without an image gets the mean of two. B4 trains and is selected on
+  paired stays only and is reported on P1 only; every other arm trains on all train stays.
+- **One network class** (`models/fusion.py`): modality tokens of width 256 from a static MLP, a
+  2-layer LSTM (final hidden state) and an image MLP. Attention fusion is `[CLS, static, ts,
+  image]` plus modality embeddings in a 2-layer pre-norm Transformer (4 heads, dropout 0.1); an
+  absent modality goes in `key_padding_mask`, so it cannot influence the output (tested).
+  Heads: a long-stay logit and log1p(LOS days) from the same fused vector.
+- **Static input** (`models/data.py`): the B0 encoding (category codes, then min-max) fitted
+  on train stays only, missing values set to the train median, and one 0/1 indicator for each
+  column that has a missing value in train. A feature with no train value stops the run, and
+  so does a constant one unless `require_signal: false` (smoke). The internship's
+  `TabularPreprocessor` turns an all-missing column into 0 without a word; this check is why
+  that cannot pass silently.
+- **Image input** (`models/image.py`): frozen DenseNet-121, weights `densenet121-res224-chex`;
+  the token input is the 1,024 pooled features plus the 11 non-empty pathology logits
+  (1,035 values), the logits taken raw, before the sigmoid and operating-point normalisation
+  that `model(x)` applies. Features are cached per `dicom_id` and per weights name, and a
+  test checks the cache against on-the-fly features. The weights `densenet121-res224-all` are
+  an ablation only.
+- **What "removed" means** (`models/removal.py`, shared with Stages 4 and 7): a time-series
+  unit gets value 0 (the train mean), mask 0 and the largest delta; a static group gets the
+  train median and its indicators set to 1; a modality is marked absent.
+- **Training** (`models/train.py`): BCE with `pos_weight` + lambda * Huber on log1p(LOS);
+  AdamW, warmup then cosine; early stopping on validation AUPRC (patience 8); the best
+  validation epoch is restored. Modality dropout (image 0.3, static and time series 0.1,
+  never all at once) and evidence-unit dropout (a random 10-15% of the (variable x 4 h)
+  units per stay each step). Added by me, not in the spec: gradient clipping at 5.0; each
+  static group is removed with probability 0.1 per step; a batch of one is skipped; bf16
+  autocast only on CUDA (untested here: it has a `gpu` test for the lab). If the validation
+  split holds one class, the run stops, except in the smoke config (`allow_loss_fallback`),
+  which then selects on validation error.
+- **Evaluation** (`eval/predictive.py`, `models/arms.py`): AUROC, AUPRC, Brier, ECE (10 bins),
+  MAE and RMSE in days, with patient-level bootstrap CIs; P1 = test stays with an eligible
+  X-ray, P2 = all test stays. The internship's two-stage regression is reported as well: MAE
+  and RMSE over the stays predicted short at the G-mean threshold of the train scores (the
+  legacy function). Over seeds the report gives the mean, the SD and the mean of the per-seed
+  CI bounds.
+- **Smoke images:** the demo has no real X-rays, so the 4 public images go to the stays that
+  have a synthetic eligible study, by a hash of the study id. It never sees a label and it is
+  not a real pairing. Full runs use the patient's own image only.
+
+**Alternatives.** One class per arm; imputing a missing image with zeros or a mean; the
+`-all` weights; the Transformer as the main time-series encoder.
+**Reason.** One class with a presence mask keeps every arm on the same code path, so the
+comparison is not confounded by implementation. Removal defined once means the deletion tests
+of later stages measure what the model was trained to tolerate.
+
+**Open, for the lab.** Lambda is not tuned yet (validation, never test). The seed summary
+averages per-seed intervals; Stage 7's paired tests need a decision on seed averaging.
+
+## D-048 · 2026-11-16 · Stage 4: attribution design, defaults and what the benchmark showed
+
+**Decision.**
+- **Dependencies** (approved by you): `captum` 0.9.0, `time_interpret` 0.3.0 (imported as
+  `tint`) and `grad-cam` 1.5.7, with 19 transitive packages (`pytorch-lightning`,
+  `torchmetrics`, `matplotlib`, `opencv-python-headless`, ...). torch did not change. The
+  segmentation weights (ChestX-Det PSPNet, 273 MB) download on first use.
+- **One space for every method** (`attribution/gates.py`): a presence gate per evidence unit,
+  1 = present and 0 = removed, where 0 is exactly the removal of Stage 3
+  (`models/removal.py`; tested to equal it). Occlusion, Integrated Gradients, the masks and
+  the Δ of driver selection therefore measure the same thing. Integrated Gradients uses the
+  baseline "everything removed" (for static features: the "missing" representation); time-series
+  scores are per hour, summed (IG) or averaged (masks) over each 4-hour block. A concept's
+  removal is its logit set to the train mean; the whole image is removed by marking it absent
+  (not differentiable, so ablation only).
+- **Signed effect.** A packet driver carries the removal effect Δ itself: positive means
+  toward a longer stay, and `direction` must agree with the sign. Drivers sort by |Δ|.
+- **Driver selection** (`attribution/select.py`) follows the spec. Details I settled:
+  candidates are the 5 largest |scores| per modality (either sign; the whole image counts as an
+  image unit); adjacent blocks of one variable merge only when they pushed the same way; a
+  merged unit's Δ is recomputed and must pass `tau` again; a unit with Δ exactly 0 is never a
+  driver. `tau` is the 0.95 quantile of |Δ| over 20 random non-candidate units per validation
+  stay, validation only.
+- **Image drivers.** Grad-CAM on `features.denseblock4` through an `image -> long-stay logit`
+  wrapper, for "toward longer" or "toward shorter" by the driver's sign. The region comes from
+  the PSPNet's own anatomical labels (never image columns; checked on four public films: the
+  label "Right Lung" lies on the image's left) with each lung split at the middle of its own
+  vertical extent. Only the four lung zones and the cardiomediastinal region are ever named: the
+  rest of the film is most of the picture, so a scattered map would otherwise be described as
+  "outside the lungs"; it is "no single anatomical region" instead. A pathology is a reported
+  finding only when its probability (sigmoid of the raw logit) exceeds the image model's own
+  operating threshold; below it the packet says "image model signal ... below its reporting
+  threshold". A concept with no threshold is never a finding.
+- **Observed text** is a deterministic template (`attribution/packet.py`): a block's mean
+  against the mean of the earlier hours ("rose from 1.1 to 2.3 mg/dL" for a change of 10 % or
+  more, else "stayed near"), the reference range from `configs/variables.yaml`, and for a static
+  group up to three of its features by contract label.
+- **Stage 3 addition:** trained models are now saved (`checkpoints/models/<run id>/<arm>_seed<k>.pt`
+  with `inputs.json`), and `prepare_inputs` rebuilds a run's inputs for Stage 4.
+
+**Default methods** (your decision, 2026-11-16: first IG, then changed to ExtremalMask for the time
+series; from `docs/attribution_benchmark.md`, 60 test stays, planted units; the relative-size condition
+on drivers is still open): **ExtremalMask for the time series, Integrated Gradients for static groups
+and image concepts** (ExtremalMask exists only for time series). The benchmark favoured IG for the time
+series, so this is your choice against its numbers: ExtremalMask finds the planted unit less often than
+IG (0.85 against 0.95; the intervals nearly touch) but agrees least with a randomised model (0.21
+against 0.37):
+
+| Time series, k = 3 | precision@1 | recall@3 | comprehensiveness | sufficiency (low is good) |
+|---|---|---|---|---|
+| Integrated Gradients | 0.95 | 0.97 | 0.61 | 0.00 |
+| occlusion | 0.95 | 0.94 | 0.60 | 0.02 |
+| ExtremalMask (tuned) | 0.85 | 0.83 | 0.59 | 0.09 |
+| DynaMask | 0.21 | 0.37 | 0.25 | 0.41 |
+| a random order | | | 0.04 | 0.64 |
+
+- ExtremalMask needed tuning to get there: with its defaults (lambda_1 = 0.1) precision@1 was 0.39.
+  It was tuned on a *different* data seed (1234; the benchmark uses 666): lambda_1 in
+  {0.01, 0.03, 0.1, 0.3, 1, 3, 10} and 300 to 1000 epochs, precision@1 0.50 to 0.95 on 40
+  stays. The values kept are lambda_1 = 3.0, 500 epochs, learning rate 0.01. It stays
+  available as `ts_method: extremal_mask`, and it agrees least with a randomised model
+  (0.21 against 0.37 for IG), which is a point in its favour.
+- DynaMask perturbs by smoothing the values, not by our removal, so it is a comparison only.
+- Step 2 of driver selection re-scores every candidate by exact removal, so what a method must
+  do is nominate the right candidates; recall@3 is the number that matters, and IG is highest.
+- Static ablation recovers the planted group less often (0.76) than IG (0.88) on 17 stays;
+  concept ablation and IG are equal.
+
+**Alternatives.** ExtremalMask as the default (the spec); occlusion (exact, but it cannot be
+used for the large inputs of later stages, where IG is the cheaper explanation); a different
+removal for each method.
+**Reason.** Methods that share the model's own notion of removal can be compared and combined;
+the benchmark picked the default on data where the right answer is known.
+
+**What the benchmark does not show.** It is synthetic: three planted units and one model of
+60 explained stays, so the intervals are wide (0.87 to 1.00 for IG precision@1). The driver
+precision is 0.5: `tau` (the spec's 95th percentile of random units) is only 0.04 logits on
+this sparse model, so about half of the 2.5 drivers per stay are real but unplanted effects
+(22 % of the total effect). The agreement with a randomised model is 0.2 to 0.5, not 0, partly
+because unobserved cells have a score of exactly 0 in both models. The semi-synthetic version
+(patterns planted in real tensors) and the validation report on the real model are lab work.

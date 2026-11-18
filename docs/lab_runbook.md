@@ -372,3 +372,108 @@ uv run python -m fate_icu.rag.verify --config configs/rag/full.yaml
 ### Paste back
 
 The JSON printed by `verify` in the lab.
+
+## Stage 3: encoders, fusion model, baselines
+
+### Prerequisites
+
+- Stage 0 done: the full database, the legacy reproduction and **the frozen long-stay threshold**
+  in `configs/contract.yaml` (the full config refuses to start without it).
+- Stage 2 run finished (its run id is under `artifacts\timeseries\`).
+- Stage 1 link finished (`artifacts\cxr\<run id>\`) and its images downloaded.
+- `.env` on the lab machine has `FATE_DEVICE=auto` (or `cuda`) and `MIMIC_CXR_DIR`.
+- `uv sync` with CUDA 13 support for torch (D-029); check with
+  `uv run python -c "import torch; print(torch.cuda.is_available())"`.
+
+### 3.1 Download the image weights (about 28 MB, once)
+
+```
+uv run python -m fate_icu.models.image
+```
+
+It prints `densenet121-res224-chex: 1024 pooled features + 11 pathology logits = 1035 values per image`.
+The lab needs internet for this; otherwise copy
+`%USERPROFILE%\.torchxrayvision\models_data\chex-densenet121-d121-tw-lr001-rot45-tr15-sc15-seed0-best.pt`
+from a machine that has it.
+
+### 3.2 Set the inputs in `configs/models/full.yaml`
+
+Set `timeseries_run` to the Stage 2 run id and `cxr_run` to the Stage 1 link run id: the model
+run then reuses them. Leave them `null` to rebuild both inside the run.
+
+### 3.3 Train every arm, 5 seeds (several hours on the A2000: time one seed first)
+
+```
+uv run python -m fate_icu.models.run --config configs/models/full.yaml
+```
+
+It preprocesses and caches the selected images, caches their features, trains B0, B1 to B6,
+M and the Transformer ablation for 5 seeds, and writes `outputs\models\<run id>\`
+(`metrics.json`, `run_manifest.json`, and stay-level `predictions_<arm>_seed<k>.npz` for
+Stages 4 and 7). The console shows aggregates only. To time one seed, copy the config and set
+`n_seeds: 1`.
+
+### 3.4 Tune lambda (the Huber weight) on validation
+
+Run the config for `lambda_reg` in 0.1, 0.3, 1 and 3 with `arms: [M]` and `n_seeds: 1`. Pick
+the value with the best validation AUPRC; test results are never used for this. Record the
+choice in `docs/decisions.md`.
+
+### Paste back
+
+The JSON printed at the end of the run: the table of arms and populations (AUROC, AUPRC,
+Brier, ECE, MAE, RMSE with their intervals), the split sizes, `stays_with_image`, and the
+`constant_static_features` count. Also the time of one seed. A null gain from the image is an
+acceptable result: say what the table shows.
+
+## Stage 4: attribution and evidence packets
+
+### Prerequisites
+
+- The Stage 3 run finished with its checkpoints: `checkpoints\models\<run id>\M_seed<seed>.pt`
+  (written by `fate_icu.models.run`).
+- The inputs that run used still exist (the Stage 2 tensors, the Stage 1 link and the image
+  cache), because the packets are built from the same arrays.
+- `uv sync`, and the two weight files, which download on first use and need internet once:
+  the image model (`python -m fate_icu.models.image`, 28 MB) and the segmentation model (273 MB,
+  downloaded when the first image driver is described).
+- The same `.env` as Stage 3.
+
+### 4.1 Set the model run
+
+In `configs/attribution/full.yaml` set `checkpoint_run` to the Stage 3 run id and `seed` to the
+seed of the checkpoint to explain. `n_stays: null` explains every stay of the split;
+`n_tau_stays: null` fits tau on every validation stay.
+
+### 4.2 Build the packets (hours: time one split first)
+
+```
+uv run python -m fate_icu.attribution.build_packets --config configs/attribution/full.yaml
+```
+
+It fits tau on the validation stays, then writes one `packet_<stay id>.json` per stay of the
+split under `outputs\attribution\<run id>\packets\` (credentialed-derived: never copy them off
+the lab machine). Run it once with `split: val` and once with `split: test`. The slow parts
+are the ExtremalMask training (one mask is learned for a batch of stays: time it) and Integrated Gradients and, for stays whose drivers
+include an image unit, Grad-CAM and segmentation (several seconds each). To time it, set
+`n_stays: 50`.
+
+### 4.3 Check the packets (a few minutes)
+
+The command prints aggregates only: the number of packets, tau, drivers per stay, drivers by
+modality and direction, and how many image drivers were reported as findings. Look for:
+- every packet valid (`schema_valid` equals `packets`);
+- most stays with at least one driver, and a mean near 2 to 3;
+- not all drivers from one modality;
+- image findings reported for a minority of image drivers.
+
+### 4.4 The semi-synthetic benchmark and the validation report (not built yet)
+
+The spec also asks for a semi-synthetic benchmark (patterns planted in real tensors) and a
+validation report on the real model. Neither is built: say so when you start the lab runs,
+and I will write them against the real checkpoint's shapes.
+
+### Paste back
+
+The JSON printed by `build_packets` for the `val` and `test` runs, and the time of the
+50-stay trial.

@@ -37,6 +37,11 @@ dependencies = [
     "transformers>=4.50",
     "huggingface-hub>=0.30",
     "pypdf>=5",
+    # FaTE-ICU Stage 4: attribution. captum (Integrated Gradients, occlusion), time_interpret
+    # (module name tint: ExtremalMask, DynaMask), grad-cam (Grad-CAM on the DenseNet).
+    "captum>=0.7,<1",
+    "time-interpret>=0.3,<0.4",
+    "grad-cam>=1.5,<2",
 ]
 
 [project.optional-dependencies]

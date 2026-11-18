@@ -1,0 +1,20 @@
+# Stage 4 full run (lab): packets for every validation and test stay of a Stage 3 run.
+# Set checkpoint_run to the Stage 3 run id (checkpoints/models/<run id>/M_seed<seed>.pt).
+run_name: attribution_full
+models_config: configs/models/full.yaml
+checkpoint_run: null    # TODO at run time: the Stage 3 run id
+arm: M
+seed: 666
+split: test
+n_stays: null
+n_tau_stays: null
+ts_method: extremal_mask   # the user's choice (D-048); static and image concepts use IG
+mask_epochs: 500
+mask_lambda_1: 3.0         # tuned on a separate seed (D-048)
+static_method: ig
+concept_method: ig
+ig_steps: 64
+per_modality: 5
+max_drivers: 5
+tau_quantile: 0.95
+n_random_units: 20

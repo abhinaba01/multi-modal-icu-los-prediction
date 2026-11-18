@@ -1,0 +1,15 @@
+# Stage 4 synthetic ground-truth benchmark: laptop CPU, no MIMIC data (planted-signal stays).
+# These are real results for choosing the default method (docs/decisions.md).
+run_name: attribution_benchmark
+seed: 666
+n_stays: 2000
+n_eval: 60
+epochs: 60
+lr: 0.003
+model: {d: 32, heads: 4, layers: 1, dropout: 0.1}
+ig_steps: 32
+mask_epochs: 500
+mask_lr: 0.01
+mask_lambda_1: 3.0   # tuned on seed 1234, not on the evaluation seed (D-048)
+dynamask_epochs: 150
+n_boot: 200

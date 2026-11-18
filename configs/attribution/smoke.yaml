@@ -1,0 +1,17 @@
+# Stage 4 smoke run: laptop CPU, the Stage 3 smoke inputs (open MIMIC-IV demo, synthetic CXR metadata,
+# 4 public films). Trains the M arm here. Never use these numbers in results.
+run_name: attribution_smoke
+models_config: configs/models/smoke.yaml
+checkpoint_run: null
+arm: M
+seed: 666
+split: test
+n_stays: 16
+ts_method: extremal_mask   # the user's choice (D-048); static and image concepts use IG
+mask_epochs: 100            # smoke only: the full config trains the mask for 500 epochs
+static_method: ig
+concept_method: ig
+ig_steps: 16
+per_modality: 5
+max_drivers: 5
+n_random_units: 20

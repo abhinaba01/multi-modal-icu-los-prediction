@@ -16,13 +16,18 @@ Each finished stage gets a summary of at most 10 lines here.
   end to end on `mimiciv_demo`.
 - **Stage 1:** built 2026-11-02. 210 tests pass (2 `realdata` skipped); the smoke link
   (demo cohort, synthetic metadata) and the cache step (public images) run end to end.
-- **Stage 5:** code and smoke run done 2026-11-13; 406 tests pass on 2026-11-15 (2 `realdata` skipped). The
-  public data is downloaded into `D:\fate-data\rag`: StatPearls (2.05 GB) and 151,341 PubMed
-  records. The full index still needs the four guideline PDFs, the Kaggle GPU step and your
-  relevance grades (`docs/lab_runbook.md`, Stage 5).
-- **Waiting for:** your review of `docs/contract.md` (Stage 0); for Stage 5, the four guideline
-  PDFs with their licences, a browser spot-check of one StatPearls link (D-043), and your review
-  of `configs/rag/pubmed_queries.yaml`.
+- **Stage 5:** code and smoke run done 2026-11-13. Corpus `17a268f4f611` (426,770 passages) and
+  the BM25 index are built (2026-11-15). Still needed: the Kaggle GPU step, the dense index and
+  your relevance grades (`docs/lab_runbook.md`, Stage 5).
+- **Stage 3:** built 2026-11-16. 491 tests pass (2 `realdata` skipped, 1 `gpu` skipped); the smoke
+  run trains every arm end to end on the demo. Smoke numbers mean nothing (16 test stays).
+- **Stage 4:** built 2026-11-16 (D-048). The packet run works end to end on the demo (16 valid packets); the
+  synthetic benchmark (`docs/attribution_benchmark.md`) is reviewed; your default is ExtremalMask for the time series, IG elsewhere (open: a
+  relative-size condition on drivers). Not built: the semi-synthetic
+  benchmark on real tensors and the validation report on the real model (lab).
+- **Waiting for:** your review of `docs/contract.md` (Stage 0); for Stage 4, your decision on the relative-size condition on drivers; for Stage 5, the Kaggle GPU step,
+  a browser spot-check of one StatPearls link (D-043), the open StatPearls questions (D-043) and
+  your review of `configs/rag/pubmed_queries.yaml`.
 - **Lab, Stage 0** (`docs/lab_runbook.md`): load MIMIC-IV v3.1, run the tests including
   `realdata`, reproduce the internship with the legacy scripts, then freeze the
   long-stay threshold.
@@ -44,9 +49,20 @@ full index is not built. What remains, in order:
    licence in the PDF; `kdigo_aki_2012` "(c) 2012 KDIGO", none; `esicm_ards_2023` Creative
    Commons Attribution-NonCommercial (Crossref: CC BY-NC 4.0); `padis_2018` "(c) 2018 SCCM and
    Wolters Kluwer Health, all rights reserved".
-3. **Build:** `build_corpus` (about 15 minutes), `build_index --part bm25`, `gpu_bundle`, the
-   Kaggle GPU step (1 to 1.5 hours), `build_index --part dense`, `verify`, then the user grades
-   the pooled passages (docs/lab_runbook.md, Stage 5). Expected size: about 425,000 passages.
+3. **Build.** Laptop part done 2026-11-15 (runbook 5.2):
+   - `build_corpus`: corpus `17a268f4f611` with 426,770 passages (PubMed 265,346 from
+     151,126 documents, StatPearls 160,640 from 9,651 articles, guidelines 784 from 4).
+     Tokens per passage: median 203, 95th percentile 285, max 300. 14 documents gave no
+     passage.
+   - `build_index --part bm25`: index version `b2112c8c296424a0`, vocabulary 160,570; every
+     query has BM25 hits.
+   - `gpu_bundle`: 4 files in `D:\fate-data\rag\rag_full\gpu_bundle` (passages.parquet
+     171 MB).
+
+   **Next:** the Kaggle GPU step (runbook 5.3, 1 to 2 hours on a T4). Put its `gpu_out` into
+   `D:\fate-data\rag\rag_full\index\b2112c8c296424a0\gpu_out`, then run
+   `build_index --part dense` and `verify` (5.4). After that, the user grades the pooled
+   passages.
 4. **Open questions for the user:** keep or restore the dropped StatPearls section "Enhancing
    Healthcare Team Outcomes", and the 20-token minimum (D-043); open
    `https://www.ncbi.nlm.nih.gov/books/n/statpearls/article-22481/` in a browser, which should
@@ -55,6 +71,35 @@ full index is not built. What remains, in order:
 Afterwards: Stage 3 (docs/stages.md).
 
 ## Stage summaries
+
+### Stage 4: attribution and evidence packets (build done, 2026-11-16)
+
+- **Code:** `fate_icu.attribution` (gates, units, methods, select, image_cam, regions, packet, explain,
+  build_packets, benchmark, synthetic) and `fate_icu.eval.attr_faithfulness`; configs in `configs/attribution/`.
+- **Idea:** every method works on presence gates whose 0 is exactly the removal the model was trained with, so
+  occlusion, Integrated Gradients, the masks and the driver-selection delta measure the same thing (D-048).
+- **Selection:** top 5 per modality, then exact removal delta against tau (validation), merge, at most 5 drivers.
+- **Packets:** pydantic schema, deterministic observed text, image findings only above the model's operating
+  threshold, regions from anatomical labels (verified on public films).
+- **Benchmark (synthetic, 60 stays):** the top driver is a planted unit 93-95 % of the time; IG is the default
+  (ExtremalMask 0.85 after tuning on a separate seed, DynaMask 0.21). Half of the selected drivers are unplanted.
+- **Stage 3 changed:** trained models are now saved as checkpoints.
+- **Not done:** the semi-synthetic benchmark on real tensors and the validation report (lab); your review.
+
+### Stage 3: encoders, fusion model, baselines (build done, 2026-11-16)
+
+- **Code:** `fate_icu.models` (data, image, encoders, fusion, removal, train, arms, run) and
+  `fate_icu.eval.predictive`; configs in `configs/models/`.
+- **Arms:** B0 (the internship XGBoost) and B1 to B6, M and the Transformer ablation, each with 5
+  seeds in the full config; one network class with a presence mask covers every neural arm (D-047).
+- **Robustness training:** modality dropout and evidence-unit dropout; what "removed" means as an
+  input is defined once in `models/removal.py` for Stages 4 and 7.
+- **Metrics:** AUROC, AUPRC, Brier, ECE, MAE, RMSE with patient-level bootstrap CIs on P1 (paired
+  test stays) and P2 (all test stays).
+- **Found on the way:** the internship's preprocessor turns an all-missing column into 0 without
+  a word; the new static encoding stops on it (D-047).
+- **Smoke run** (demo, 86 stays, 2 seeds): all 9 arms run end to end on the same test patients.
+- **Not done:** lambda tuning, the 5-seed lab run, and bf16 autocast (written, tested on CPU only).
 
 ### Stage 5: RAG layer (code and smoke run done, 2026-11-13; full index pending)
 
