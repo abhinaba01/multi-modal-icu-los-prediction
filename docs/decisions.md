@@ -1012,3 +1012,38 @@ an LLM-written text (Stage 6 proper, needs MedGemma QLoRA and approval of new de
 
 **Reason.** Shows the whole idea (inputs, prediction, reasons, cited English sentence, checked against a contract) within the
 deadline, without risking credentialed data. It is a stand-in for Stage 6's loop, not a result: its numbers are not reported.
+
+## D-054 · 2026-11-20 · Stage 6 code: contract-checked sampling, QLoRA SFT and DPO pairs, built on the laptop
+
+**Decision.**
+- Added `peft`, `trl`, `accelerate` and `datasets` to the dependencies (you approved on 2026-11-20). `bitsandbytes` stays in the
+  `gpu` extra for the VM and is imported lazily; it could not be added to the lock here because `uv` cannot reach PyPI over this
+  network's IPv6 (see the note below), so add it on the VM with `uv add --optional gpu "bitsandbytes>=0.43"`.
+- `fate_icu.llm`: `prompt` (one user turn; two worked examples only when sampling), `generate` (greedy first try, up to 3 resamples
+  at temperature 0.7, then the deterministic template; retry and fallback rates counted), `dataset` (rejection sampling with
+  the contract check and an optional second checker; DPO pairs from failed samples and from corrupted copies, each
+  corruption verified to break the contract), `sft` (TRL `SFTTrainer` on pre-tokenised data), `tiny`/`synthetic`/`smoke` (offline
+  tiny model, synthetic packets, end-to-end smoke), `run` (CLI for the VM).
+- The loss is on the completion only. I tokenise the records myself (`labels = -100` on the prompt) instead of relying on TRL's
+  masking, so a test can check that the tokens with a label decode to exactly the completion plus `<end_of_turn>`.
+- LoRA modules are chosen by a regular expression that excludes the vision tower (`vision`, `visual`, `multi_modal_projector`), the
+  count is printed, and a run stops if none match or one is a vision module.
+- Spot VMs: `save_steps` checkpoints; a rerun resumes from the newest; `generate --resume` skips finished items.
+- The training-time support checker (the "extra check") is a hook, `extra_check`, not yet filled in. It must differ from Stage 7's
+  evaluation checker; the choice (an NLI model through `transformers`, not AlignScore) is still yours.
+
+**Alternatives.** TRL's own prompt-completion masking (version-dependent, harder to test); a plain PyTorch loop (no resume or
+checkpoint handling for free); one shared checker for training and evaluation (the evaluation would then flatter the model).
+**Reason.** The training loop and its checks can be proved on the laptop with a tiny random model before any GPU hour is spent.
+
+**DPO (added the same day).** `fate_icu.llm.dpo`: merge the SFT adapter into a bf16 copy of the base on the CPU, then train a fresh
+QLoRA adapter on the merged model with TRL's `DPOTrainer` (beta 0.1, learning rate 5e-6, one epoch, precomputed reference
+log-probabilities, checkpoints for resume). Tested on the tiny model: merge, train, resume.
+
+**Not verified:** anything on MedGemma itself (module names, memory use at 2048 tokens, `AutoModelForImageTextToText` loading, 4-bit
+loading). The smoke run uses a tiny Llama-style model. First run on the VM: `python -m fate_icu.llm.sft` with `full.yaml` for a
+few steps and read the printed module count.
+
+**Environment note (this laptop).** IPv6 to PyPI is broken here, so `uv` waits on it; `uv sync` then fails to fetch the build
+backend (hatchling). Workaround used: the packages were installed with `uv sync --no-install-project`, a `.pth` file in
+`.venv` points at `src/`, and commands run as `uv run --no-sync ...`. Nothing in git depends on it.

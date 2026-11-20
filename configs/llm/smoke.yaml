@@ -1,0 +1,23 @@
+# Stage 6 smoke run: laptop CPU, a tiny random model built offline (the `model` below is replaced by
+# fate_icu.llm.smoke). Proves the code runs, saves and resumes; says nothing about explanation quality.
+run_name: llm_smoke
+model: tiny            # replaced at run time
+quantize_4bit: false
+max_length: 3072
+max_steps: 6
+batch_size: 1
+grad_accum: 2
+learning_rate: 0.005
+warmup_ratio: 0.1
+lora_r: 8
+lora_alpha: 16
+optim: adamw_torch
+bf16: false
+gradient_checkpointing: false
+save_steps: 3
+logging_steps: 1
+pass_rate_every: 3
+pass_rate_packets: 3
+max_new_tokens: 40
+seed: 666
+device: cpu

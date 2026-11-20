@@ -698,3 +698,51 @@ uv run python -m fate_icu.demo.app
 Open http://127.0.0.1:8765, type values, and press "Explain the stay". `--retrain` trains again;
 `--port N` changes the port. Stop with Ctrl+C. The page works offline. Say at the demo that the model is trained on 56 open-demo
 stays and shows how the explanation works; the real numbers come from the GCP runs (aggregates only).
+
+## Stage 6: the explainer (QLoRA SFT, DPO pairs, generation)
+
+**Laptop smoke (about 30 s, no download, no data):**
+
+```
+uv run --no-sync python -m fate_icu.llm.smoke --out artifacts/llm_smoke
+```
+
+It builds synthetic packets and a tiny random model, samples, checks the contract, writes SFT records and DPO pairs, trains a LoRA
+adapter for 6 steps (logging the validator pass rate), then generates with the adapter. The numbers are plumbing counts (the random
+model learns nothing, so every explanation falls back to the template, which is the point of the fallback).
+
+**On the GCP VM (needs real packets from Stage 4 and passages from Stage 5; about 1.5 to 3 h of L4 time, roughly 7 to 15 euro):**
+
+Prerequisites: the MedGemma terms accepted on Hugging Face; `HF_TOKEN` in the VM's `.env`; `uv add --optional gpu "bitsandbytes>=0.43"`
+then `uv sync --extra gpu`; an `items.jsonl` (one line per stay: `{"packet": ..., "passages": [...]}`) under the artifacts folder.
+
+1. Sample the base model and build the training data (counts only are printed):
+
+```
+uv run python -m fate_icu.llm.run sample --items <items.jsonl> --model google/medgemma-1.5-4b-it --image-text-model --out <dir>
+```
+
+2. Fine-tune (resumes if the VM was reclaimed; pin `revision` in `configs/llm/full.yaml` first):
+
+```
+uv run python -m fate_icu.llm.sft --config configs/llm/full.yaml --records <dir>/sft.jsonl --out <sft_dir>
+```
+
+3. Generate explanations for the test items:
+
+```
+uv run python -m fate_icu.llm.run generate --items <test_items.jsonl> --model google/medgemma-1.5-4b-it --image-text-model --adapter <sft_dir>/adapter --out <gen_dir> --resume
+```
+
+4. Optional DPO (H5), after SFT: merge the SFT adapter into a copy of the base, then train a fresh adapter on the preference pairs:
+
+```
+uv run python -m fate_icu.llm.dpo merge --model google/medgemma-1.5-4b-it --image-text-model --adapter <sft_dir>/adapter --out <merged_dir>
+uv run python -m fate_icu.llm.dpo train --config configs/llm/dpo_full.yaml --model <merged_dir> --pairs <dir>/dpo.jsonl --out <dpo_dir>
+```
+
+Generate with the DPO adapter using step 3 with `--model <merged_dir> --adapter <dpo_dir>/adapter`.
+
+Paste back: `dataset_stats.json`, `metrics.json` of the SFT and DPO runs (module count, loss, pass rates), `generation_stats.json`
+(retry and fallback rates). Never paste a generated text. The merged model and adapters are credentialed derivatives: keep them
+under the VM's artifacts folder.

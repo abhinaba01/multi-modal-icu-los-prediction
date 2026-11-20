@@ -30,7 +30,9 @@ from fate_icu.utils.aggregates import format_aggregates
 from fate_icu.utils.hashing import binary_sha256
 
 MANIFEST_NAME = "SHA256SUMS.txt"
-_LINE = re.compile(r"^([0-9a-f]{64})  (.+)$")
+# "<sha256>  <path>" (sha256sum, two spaces) or "<sha256> <path>" (PhysioNet's SHA256SUMS.txt, one space);
+# an optional "*" before the path marks binary mode.
+_LINE = re.compile(r"^([0-9a-f]{64}) {1,2}\*?(.+)$")
 REPORTED = 20  # file names listed per problem kind
 
 

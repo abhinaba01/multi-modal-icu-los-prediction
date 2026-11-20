@@ -1,0 +1,22 @@
+# Stage 6 optional DPO on the GCP VM (H5). Run after SFT: merge the SFT adapter into a bf16 copy of the base
+# (python -m fate_icu.llm.dpo merge ...), then train a fresh QLoRA adapter on the merged model.
+run_name: llm_dpo_full
+image_text_model: true
+quantize_4bit: true
+beta: 0.1
+learning_rate: 0.000005
+epochs: 1
+max_length: 2048
+batch_size: 1
+grad_accum: 16
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+optim: paged_adamw_8bit
+bf16: true
+gradient_checkpointing: true
+precompute_ref_log_probs: true
+save_steps: 50
+logging_steps: 10
+seed: 666
+device: auto

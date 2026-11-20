@@ -1,0 +1,27 @@
+# Stage 6 full run: the GCP VM (one L4, 24 GB). QLoRA SFT of MedGemma 1.5 4B on the rejection-sampled
+# records (docs/stages.md, Stage 6). Pin `revision` to the commit hash of the downloaded snapshot before
+# a run you intend to report; the run manifest records it.
+run_name: llm_sft_full
+model: google/medgemma-1.5-4b-it
+revision: null          # TODO on the VM: the commit hash printed by the first download
+image_text_model: true  # loads with AutoModelForImageTextToText; text input only
+quantize_4bit: true     # NF4, double quantisation, bf16 compute (needs the `gpu` extra: bitsandbytes)
+max_length: 2048        # out of memory: 1536
+epochs: 2
+batch_size: 1
+grad_accum: 16
+learning_rate: 0.0002
+warmup_ratio: 0.03
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+optim: paged_adamw_8bit
+bf16: true
+gradient_checkpointing: true
+save_steps: 50          # a spot VM can be reclaimed: a rerun resumes from the newest checkpoint
+logging_steps: 10
+pass_rate_every: 100
+pass_rate_packets: 100
+max_new_tokens: 300
+seed: 666
+device: auto

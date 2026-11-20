@@ -97,6 +97,16 @@ Afterwards: Stage 3 (docs/stages.md).
 - **Stage 3 changed:** trained models are now saved as checkpoints.
 - **Not done:** the semi-synthetic benchmark on real tensors and the validation report (lab); your review.
 
+### Stage 6: explainer code (laptop part built, 2026-11-20, D-054)
+
+- **Built:** prompt builder, generate loop (retry, template fallback, rates), dataset builder (SFT records, DPO pairs from failed and
+  corrupted samples), QLoRA SFT with completion-only labels, LoRA module selection that excludes the vision tower, resume, a tiny
+  offline model, synthetic packets, a CLI for the VM, `configs/llm/{smoke,full}.yaml`. About 90 new tests.
+- **Smoke:** `python -m fate_icu.llm.smoke` runs end to end in about 30 s on the CPU (plumbing only).
+- **DPO:** `fate_icu.llm.dpo` merges the SFT adapter and trains a fresh adapter on the preference pairs (tiny-model tests pass).
+- **Not done:** MedGemma itself (module names, memory, 4-bit loading are untested), the training-time support
+  checker, real packets, the Kaggle/Colab QLoRA smoke. `bitsandbytes` is not in the lock (see D-054).
+
 ### Demo: MIMIC-IV-only explainer page (built 2026-11-20, D-053)
 
 - **What:** `python -m fate_icu.demo.app` serves a local page (127.0.0.1): type a patient's first-24-hour values, get the

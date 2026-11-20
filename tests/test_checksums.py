@@ -108,3 +108,15 @@ def test_command_line_exit_status(tmp_path, capsys):
     (root / "raw" / "top.txt").write_bytes(b"changed")
     with pytest.raises(SystemExit, match="does not match"):
         main(["check", str(root)])
+
+
+def test_read_manifest_accepts_one_space_separator_as_physionet_writes_it(tmp_path):
+    digest = "a" * 64
+    manifest = tmp_path / "SHA256SUMS.txt"
+    lines = [f"{digest} hosp/admissions.csv.gz", f"{digest}  icu/icustays.csv.gz", f"{digest} *LICENSE.txt"]
+    manifest.write_text(chr(10).join(lines) + chr(10))
+    assert read_manifest(manifest) == {
+        "hosp/admissions.csv.gz": digest,
+        "icu/icustays.csv.gz": digest,
+        "LICENSE.txt": digest,
+    }
