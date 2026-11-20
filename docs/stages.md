@@ -4,6 +4,8 @@ Referenced from CLAUDE.md. Read **only the stage I name** ("Start Stage N"); don
 
 **Build order (laptop, now):** 0 → 2 → 1 → 5 → 3 → 4 → 6 → 7. Stage 2 comes early because its variable list feeds the RAG queries and attribution. Stage 5 uses only public data, so it is built *and* run now.
 
+**Where "lab" runs (changed 2026-11-20):** on the GCP VM (D-049), not the college desktop; the laptop never trains a real model.
+
 **Run order (lab, later):** 0 → 1 → 2 → 3 → 4 → 6 → 7. Each stage needs the previous stage's outputs; Stage 5's finished index is copied across.
 
 **Stage status** (update when a stage's build is done; the ≤10-line summary goes in `docs/STATUS.md`):

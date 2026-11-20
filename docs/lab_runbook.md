@@ -1,5 +1,8 @@
 # Lab runbook (college lab desktop, RTX A2000 12 GB)
 
+> **2026-11-20:** the college lab is not available. "Lab" in this file now means the GCP VM described in the
+> last section, "GCP: the run machine" (D-049). Use `FATE_MACHINE=gcp`. Runtimes written for the A2000 are guides.
+
 Each stage adds a section: prerequisites, exact commands, expected runtime on the lab
 machine, and what to paste back. Commands use `uv run` and `python -m` entry points, so
 they work in PowerShell, cmd and bash alike. Paste back **aggregate output only**. Every
@@ -477,3 +480,166 @@ and I will write them against the real checkpoint's shapes.
 
 The JSON printed by `build_packets` for the `val` and `test` runs, and the time of the
 50-stay trial.
+
+## GCP: the run machine (replaces the college lab)
+
+From 2026-11-20 every "lab" step in this file runs on a GCP VM in your credentialed project. Use the
+same commands, with `FATE_MACHINE=gcp`. Runtimes marked "A2000" were estimated for the lab GPU; the
+L4 (24 GB, bf16) is a little faster and has more memory. Time one seed first.
+
+**Rules that do not change** (CLAUDE.md A3): the data and everything derived from it stay inside this
+project. Nothing is copied to your laptop, Kaggle, Colab or git, no bucket or disk that holds it is
+public, and you paste back aggregates only. PhysioNet's cloud rules can change: read its current page on
+cloud use before loading the data, and keep to what it says.
+
+### G1. One-time project setup (about 30 minutes)
+
+You need a GCP project with billing on, and `gcloud` installed on the laptop (it only talks to GCP).
+Replace `PROJECT`, `REGION` and `ZONE` (an L4 zone with spot capacity, for example `us-central1-a`).
+
+```
+gcloud config set project PROJECT
+gcloud services enable compute.googleapis.com iap.googleapis.com
+```
+
+Set a billing **budget alert** in the console first (Billing > Budgets and alerts), so a forgotten VM cannot
+run up a bill.
+
+### G2. Network without a public address (about 10 minutes)
+
+The VM gets no public IP; you reach it through Google's identity-aware proxy, and a NAT gives it outbound
+internet (for PhysioNet, PyPI and GitHub).
+
+```
+gcloud compute firewall-rules create fate-allow-iap-ssh --network=default --direction=INGRESS --action=allow --rules=tcp:22 --source-ranges=35.235.240.0/20
+gcloud compute routers create fate-router --network=default --region=REGION
+gcloud compute routers nats create fate-nat --router=fate-router --region=REGION --auto-allocate-nat-external-ips --nat-all-subnet-ip-ranges
+```
+
+### G3. Disk and VM (about 10 minutes)
+
+A 500 GB data disk holds PostgreSQL (about 100 GB), the downloaded files, the image cache and the
+checkpoints. It survives when the VM is stopped or reclaimed.
+
+```
+gcloud compute disks create fate-data --size=500GB --type=pd-balanced --zone=ZONE
+gcloud compute instances create fate-icu --zone=ZONE --machine-type=g2-standard-8 --provisioning-model=SPOT --instance-termination-action=STOP --maintenance-policy=TERMINATE --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud --boot-disk-size=100GB --boot-disk-type=pd-balanced --disk=name=fate-data,device-name=fate-data,mode=rw,boot=no --no-address --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --metadata=enable-oslogin=TRUE
+```
+
+`g2-standard-8` comes with one L4 attached (no accelerator flag). If the zone has no spot L4 capacity the
+command says so: try another zone. Roughly, the VM costs a few tenths of a dollar per hour while it runs
+(spot) and the two disks about $60 a month whether it runs or not: check Google's pricing calculator.
+
+Connect from the laptop:
+
+```
+gcloud compute ssh fate-icu --zone=ZONE --tunnel-through-iap
+```
+
+### G4. Prepare the VM (about 45 minutes, once)
+
+On the VM. Check each step's output before the next.
+
+```
+# the GPU driver, with Google's documented installer
+curl -L https://github.com/GoogleCloudPlatform/compute-gpu-installation/raw/main/linux/install_gpu_driver.py -o install_gpu_driver.py
+sudo python3 install_gpu_driver.py
+nvidia-smi
+```
+
+`nvidia-smi` must show an L4. Its "CUDA Version" line must be at least the one the locked torch needs
+(D-029 says CUDA 13 for torch 2.15): if it is lower, tell me and I will pin an older torch for the VM.
+
+```
+# mount the data disk
+sudo mkfs.ext4 -m 0 -F -E lazy_itable_init=0,lazy_journal_init=0,discard /dev/disk/by-id/google-fate-data
+sudo mkdir -p /mnt/data && sudo mount -o discard,defaults /dev/disk/by-id/google-fate-data /mnt/data
+echo '/dev/disk/by-id/google-fate-data /mnt/data ext4 discard,defaults,nofail 0 2' | sudo tee -a /etc/fstab
+sudo chown $USER /mnt/data
+```
+
+(`mkfs` erases the disk: run it only this first time.)
+
+```
+# tools
+sudo apt-get update && sudo apt-get install -y git tmux postgresql postgresql-contrib wget
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Move PostgreSQL's data onto the data disk, so the 100 GB database is not on the small boot disk:
+
+```
+sudo systemctl stop postgresql
+sudo mkdir -p /mnt/data/postgresql && sudo rsync -a /var/lib/postgresql/ /mnt/data/postgresql/
+sudo sed -i "s#^data_directory = .*#data_directory = '/mnt/data/postgresql/14/main'#" /etc/postgresql/14/main/postgresql.conf
+sudo systemctl start postgresql
+sudo -u postgres psql -c "show data_directory;"
+```
+
+Give your Linux user a PostgreSQL role, so `psql` works without a password over the local socket:
+
+```
+sudo -u postgres createuser --superuser $USER
+```
+
+Clone the repository (the repo is private: use a fine-grained, read-only access token that you type when
+asked; never put it in a file in the repo) and install:
+
+```
+cd /mnt/data && git clone https://github.com/abhinaba01/multi-modal-icu-los-prediction.git fate-icu
+cd fate-icu && uv sync
+uv run python -c "import torch; print(torch.cuda.is_available())"
+```
+
+Create `.env` from `.env.example` with `FATE_MACHINE=gcp`, `FATE_DB_URL=postgresql+psycopg:///mimiciv` (the local socket,
+no password) , and `FATE_DATA_DIR`, `FATE_ARTIFACTS_DIR`, `FATE_OUTPUTS_DIR` and `FATE_CHECKPOINTS_DIR` under
+`/mnt/data/fate-icu-data/...` so that nothing credentialed is written to the boot disk.
+
+### G5. Load the data (several hours, mostly waiting)
+
+One command does what Stage 0 step 0.1 describes. It runs only on the VM (it refuses to run on
+Windows), and it takes your PhysioNet username; **wget asks you for the password itself**, so type it
+there and nowhere else. Run it inside `tmux`:
+
+```
+tmux new -s fate                  # reattach later with: tmux attach -t fate
+cd /mnt/data/fate-icu
+uv run python -m fate_icu.utils.mimic_load --step all --user <PHYSIONET_USERNAME> --dest /mnt/data/mimic/mimiciv/3.1 --code-dir /mnt/data/mimic-code
+```
+
+The steps are `preflight` (tools, free disk, clones mimic-code at the pinned tag), `download`, `verify`
+(every file against PhysioNet's checksum list), `load`, `concepts` and `check` (counts only; it fails if
+the ICU stay count is not the 94,458 of MIMIC-IV v3.1). Add `--dry-run` first to see every command
+without running it. To repeat one step, give it by name, for example `--step load`; a database that
+already holds the stays is skipped unless you add `--force`, so re-running after an interruption is safe.
+The download resumes where it stopped.
+
+Then follow **Stage 0, steps 0.2 to 0.6**, and Stages 2 and 1, as written for the lab.
+
+### G6. Running the stages, and what a reclaimed VM means
+
+Order: Stage 0, 2, 1, 3, 4, then 6 and 7 when they exist. Start the VM only when you have a job; stop
+it afterwards (a stopped VM costs only its disks):
+
+```
+gcloud compute instances start fate-icu --zone=ZONE
+gcloud compute instances stop fate-icu --zone=ZONE
+```
+
+A spot VM can be reclaimed by Google at any time; it then stops and keeps its disks. To carry on:
+start it, reconnect, `tmux new -s fate`, and repeat the command with `--resume`. Stage 3 saves each
+arm as soon as it is trained, so it loses at most the arm in progress:
+
+```
+uv run python -m fate_icu.models.run --config configs/models/full.yaml --resume <run id>
+```
+
+The run id is printed at the start and is the folder name under `outputs/models/`. Resuming refuses to
+continue if the config or the long-stay threshold changed.
+
+### G7. Before you stop for good
+
+- Stop the VM after each session; delete the VM and both disks when the project is finished.
+- Do not create snapshots or images of the data disk unless they stay in the project.
+- Keep the billing budget alert on.
+- Copy nothing off the VM except the aggregate text that each stage asks you to paste back.

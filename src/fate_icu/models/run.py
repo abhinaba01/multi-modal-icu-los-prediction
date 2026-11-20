@@ -35,7 +35,15 @@ from fate_icu.data.cxr.cache import fixture_items, mimic_items
 from fate_icu.data.cxr.preprocess import build_cache
 from fate_icu.data.targets import resolve_long_stay_threshold
 from fate_icu.data.timeseries import build as ts_build
-from fate_icu.models.arms import ARMS, POPULATIONS, evaluate_arm, run_arms, sized
+from fate_icu.models.arms import (
+    ARMS,
+    LATE_FUSION_PARTS,
+    POPULATIONS,
+    evaluate_arm,
+    late_fusion,
+    run_arm,
+    sized,
+)
 from fate_icu.models.data import StayData, assemble
 from fate_icu.models.image import WEIGHTS, cached_features, load_image_encoder
 from fate_icu.models.train import TrainConfig, save_trained
@@ -267,16 +275,77 @@ def prepare_inputs(
     )  # fmt: skip
 
 
+def _predictions_file(out_dir: Path, name: str, seed: int) -> Path:
+    return out_dir / f"predictions_{name}_seed{seed}.npz"
+
+
+def _save_predictions(path: Path, stay_ids: np.ndarray, pred: dict[str, np.ndarray]) -> None:
+    """Atomic write: a reclaimed spot VM never leaves a half-written file that counts as done."""
+    tmp = path.with_name(path.stem + ".tmp.npz")
+    np.savez_compressed(tmp, stay_ids=stay_ids, **pred)
+    tmp.replace(path)
+
+
+def _load_predictions(path: Path, stay_ids: np.ndarray) -> dict[str, np.ndarray]:
+    with np.load(path, allow_pickle=False) as saved:
+        if not np.array_equal(saved["stay_ids"], stay_ids):
+            raise ValueError(f"{path.name} was made for different stays: do not resume across data changes")
+        return {k: saved[k] for k in saved.files if k != "stay_ids"}
+
+
+def train_or_resume_arms(
+    neural: list[str],
+    data: StayData,
+    cfg: TrainConfig,
+    seed: int,
+    arms: dict,
+    *,
+    out_dir: Path,
+    ckpt_dir: Path,
+    run_id: str,
+    log=print,
+) -> dict[str, dict[str, np.ndarray]]:
+    """Predictions of the neural arms for one seed, saving each arm as soon as it is trained.
+
+    An arm is done when both its checkpoint and its predictions file exist; a finished arm is
+    read back instead of retrained. B5 is a mean of B1, B2 and B4 and is recomputed, never saved
+    as a model. Saving per arm means a spot VM that is reclaimed loses at most the arm in
+    progress.
+    """
+    wanted = [a for a in neural if a != "B5"]
+    if "B5" in neural:
+        wanted += [a for a in LATE_FUSION_PARTS if a not in wanted]
+    predictions: dict[str, dict[str, np.ndarray]] = {}
+    for name in wanted:
+        pred_path = _predictions_file(out_dir, name, seed)
+        ckpt_path = ckpt_dir / f"{name}_seed{seed}.pt"
+        if pred_path.exists() and ckpt_path.exists():
+            predictions[name] = _load_predictions(pred_path, data.stay_ids)
+            log(f"resumed {name} seed {seed} (already trained)")
+            continue
+        trained: dict = {}
+        predictions[name] = run_arm(arms[name], data, cfg, seed, trained)
+        save_trained(trained[name], ckpt_path, data.dims, extra={"arm": name, "seed": seed, "run_id": run_id})
+        _save_predictions(pred_path, data.stay_ids, predictions[name])  # last: marks the arm done
+        log(f"trained {name} seed {seed}")
+    if "B5" in neural:
+        predictions["B5"] = late_fusion({k: predictions[k] for k in LATE_FUSION_PARTS})
+    return {name: predictions[name] for name in neural}
+
+
 def run(
     config: ModelsRunConfig,
     contract: Contract | None = None,
     *,
     tables: TabularTables | None = None,
     settings: Settings | None = None,
+    resume: str | None = None,
 ) -> dict[str, Any]:
+    """Train every arm and seed. ``resume`` is the run id of an interrupted run: finished arms are
+    read back and only the rest is trained (the config must be the same)."""
     contract = contract or load_contract()
     settings = settings or load_settings()
-    run_id = new_run_id(config.run_name)
+    run_id = resume or new_run_id(config.run_name)
     out_dir = settings.outputs_dir / "models" / run_id
     seed_everything(config.seed)
     unknown = [a for a in config.arms if a != "B0" and a not in ARMS]
@@ -301,45 +370,47 @@ def run(
     neural = [a for a in config.arms if a != "B0"]
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    ckpt_dir = settings.checkpoints_dir / "models" / run_id
+    inputs_file = ckpt_dir / "inputs.json"
+    record = {
+        "run_id": run_id,
+        "config": json.loads(json.dumps(config.model_dump())),
+        "timeseries_run": str(prep.ts_dir),
+        "cxr_run": str(prep.link_dir),
+        "threshold_days": threshold,
+        "threshold_source": threshold_source,
+    }
+    if resume:
+        if not inputs_file.exists():
+            raise FileNotFoundError(f"cannot resume {resume}: no {inputs_file}")
+        before = json.loads(inputs_file.read_text(encoding="utf-8"))
+        if before["config"] != record["config"] or before["threshold_days"] != threshold:
+            raise ValueError(
+                "the config or the long-stay threshold changed since the run started: start a new run"
+            )
+    else:
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        inputs_file.write_text(json.dumps(record, indent=2), encoding="utf-8")
+
     per_seed: dict[str, dict[str, list[dict]]] = {a: {p: [] for p in POPULATIONS} for a in config.arms}
     for seed in seeds:
-        trained: dict = {}
-        predictions = run_arms(neural, data, train_cfg, seed, arms, trained) if neural else {}
-        for name, model in trained.items():
-            save_trained(
-                model,
-                settings.checkpoints_dir / "models" / run_id / f"{name}_seed{seed}.pt",
-                data.dims,
-                extra={"arm": name, "seed": seed, "run_id": run_id},
+        predictions = (
+            train_or_resume_arms(
+                neural, data, train_cfg, seed, arms, out_dir=out_dir, ckpt_dir=ckpt_dir, run_id=run_id
             )
+            if neural
+            else {}
+        )
         if "B0" in config.arms:
             predictions["B0"] = b0_predictions(tables, split, data, contract, settings, config, threshold)
         for name, pred in predictions.items():
-            np.savez_compressed(
-                out_dir / f"predictions_{name}_seed{seed}.npz", stay_ids=data.stay_ids, **pred
-            )
+            if name == "B0" or name == "B5":  # the neural arms were saved as they finished
+                _save_predictions(_predictions_file(out_dir, name, seed), data.stay_ids, pred)
             populations = ARMS[name].populations if name in ARMS else POPULATIONS
             for population in populations:
                 per_seed[name][population].append(
                     evaluate_arm(pred, data, population, n_boot=config.n_boot, seed=config.seed)
                 )
-
-    inputs_file = settings.checkpoints_dir / "models" / run_id / "inputs.json"
-    inputs_file.parent.mkdir(parents=True, exist_ok=True)
-    inputs_file.write_text(
-        json.dumps(
-            {
-                "run_id": run_id,
-                "config": config.model_dump(),
-                "timeseries_run": str(prep.ts_dir),
-                "cxr_run": str(prep.link_dir),
-                "threshold_days": threshold,
-                "threshold_source": threshold_source,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
 
     results: dict[str, Any] = {
         "run_id": run_id,
@@ -380,9 +451,12 @@ def run(
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", required=True)
+    parser.add_argument(
+        "--resume", default=None, metavar="RUN_ID", help="continue an interrupted run (same config)"
+    )
     args = parser.parse_args(argv)
     path = Path(args.config)
-    report = run(load_run_config(path if path.is_absolute() else REPO_ROOT / path))
+    report = run(load_run_config(path if path.is_absolute() else REPO_ROOT / path), resume=args.resume)
     print(format_aggregates(report))
 
 

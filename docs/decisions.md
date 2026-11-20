@@ -887,3 +887,35 @@ this sparse model, so about half of the 2.5 drivers per stay are real but unplan
 (22 % of the total effect). The agreement with a randomised model is 0.2 to 0.5, not 0, partly
 because unobserved cells have a score of exactly 0 in both models. The semi-synthetic version
 (patterns planted in real tensors) and the validation report on the real model are lab work.
+
+## D-049 · 2026-11-20 · GCP replaces the college lab as the run machine
+
+**Decision (your choice).**
+- The lab desktop is not available, so every real-data job and all real training run on a GCP VM in
+  your credentialed project: `g2-standard-8` with one L4 (24 GB), spot, no public IP (IAP for SSH, a
+  NAT for outbound), a 500 GB persistent data disk holding PostgreSQL, downloads, the image cache and
+  the checkpoints. `FATE_MACHINE=gcp`. The laptop never trains a real model; it is for code, tests and
+  smoke runs. CLAUDE.md A2, A3, A5, A8 and Stage 0 were rewritten to say this.
+- MIMIC-IV and MIMIC-CXR-JPG are not in the project yet: they are downloaded onto the VM from PhysioNet
+  with your credentials and loaded with the same mimic-code scripts as in the lab plan (the
+  PostgreSQL schema names do not change). Steps: the new "GCP" section of `docs/lab_runbook.md`.
+- `docs/lab_runbook.md` keeps its name, and "lab" in the docs now means this VM. Runtime estimates written
+  for the A2000 are upper-bound guides: time one seed first.
+- Kaggle and Colab stay public, synthetic and demo data only (the PubMed embeddings, smoke runs).
+  Training on credentialed data there was considered and refused: the PhysioNet agreement forbids
+  sharing it with third parties, and a private Kaggle dataset or a mounted Drive still is sharing.
+- **Spot VMs can be reclaimed at any time**, so Stage 3 now saves each arm the moment it is trained
+  (checkpoint, then predictions, atomically) and `--resume <run id>` reads finished arms back and trains
+  only the rest; it refuses to resume if the config, the threshold or the stays changed. Stages 4 and 6
+  will follow the same rule (per-stay and per-step progress).
+- `realdata` tests now run when `FATE_MACHINE` is `lab` or `gcp`.
+
+**Alternatives.** An on-demand VM (about three times the price, no reclaim); a T4 (cheaper, no bf16,
+tight for QLoRA); an A100 (faster, dearer); Cloud SQL or BigQuery for MIMIC (a new code path).
+**Reason.** The L4 has bf16 and 24 GB, which covers Stage 3 and QLoRA on MedGemma 4B with room to spare;
+spot pricing is a fraction of on-demand, and per-arm saving makes reclaims cheap. A persistent disk keeps
+the 100 GB database across reclaims and stops.
+
+**Not verified yet.** The commands in the GCP section have not been run: this laptop cannot create the
+VM from here. Treat the first run as the test, and tell me what differs (zone capacity, the driver's
+CUDA version against torch 2.15, the PostgreSQL version and paths).

@@ -1,7 +1,8 @@
 """Shared fixtures and marker handling.
 
 * ``gpu``: skipped without a CUDA device.
-* ``realdata``: credentialed data; runs only when ``FATE_MACHINE=lab``.
+* ``realdata``: credentialed data; runs only when ``FATE_MACHINE`` is ``lab`` or ``gcp`` (the
+  credentialed GCP project is the second place that data may live, CLAUDE.md A2).
 * ``demo``: the local ``mimiciv_demo`` database; laptop only, skipped until
   ``FATE_DB_URL`` is set. Once it is set, an unreachable database fails loudly.
 """
@@ -32,8 +33,10 @@ def pytest_collection_modifyitems(config, items):
             has_cuda = cuda_available() if has_cuda is None else has_cuda
             if not has_cuda:
                 item.add_marker(pytest.mark.skip(reason="no CUDA device"))
-        if "realdata" in item.keywords and settings.machine != "lab":
-            item.add_marker(pytest.mark.skip(reason="credentialed data: runs only with FATE_MACHINE=lab"))
+        if "realdata" in item.keywords and settings.machine not in ("lab", "gcp"):
+            item.add_marker(
+                pytest.mark.skip(reason="credentialed data: runs only with FATE_MACHINE=lab or gcp")
+            )
         if "demo" in item.keywords:
             if settings.machine != "laptop":
                 item.add_marker(pytest.mark.skip(reason="demo tests run on the laptop only"))

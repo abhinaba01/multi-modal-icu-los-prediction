@@ -29,18 +29,20 @@ MIMIC-CXR ── chest X-ray taken before t0 ───┘           │
 
 ## A2. Two phases, two machines
 
+The college lab desktop is not available, so **all real-data work and all real training run on GCP**. This laptop never trains a real model: it is for writing code, tests and smoke runs.
+
 - **Build phase — now, on my laptop (Windows, Intel CPU, no GPU, no MIMIC data).** You run only here. Write and test all code against the open MIMIC-IV demo, synthetic data and public data. Never assume CUDA. Give commands that work in PowerShell or cmd; don't assume bash or make. mimic-code's PostgreSQL build uses `psql` with its SQL scripts.
-- **Run phase — later, on the college lab desktop (RTX A2000, 12 GB).** I clone the repo there and run real-data jobs from `docs/lab_runbook.md`. Each stage runs in the lab as soon as its code is built and its inputs exist; the two phases overlap.
+- **Run phase — on GCP, in my credentialed project (`FATE_MACHINE=gcp`).** A spot VM with one NVIDIA L4 (24 GB) and a persistent data disk, started when a job runs and stopped afterwards. I clone the repo there and run real-data jobs from `docs/lab_runbook.md` (the file keeps its name; "lab" in the docs now means this GCP VM). Each stage runs there as soon as its code is built and its inputs exist; the two phases overlap. A spot VM can be reclaimed at any time, so long jobs must save per-unit progress and resume (`--resume`); never assume a job finishes in one sitting.
 - **Kaggle / Colab:** public, synthetic or MIMIC-IV-demo data only (e.g. embedding the PubMed corpus, smoke-testing QLoRA).
-- **GCP (my credentialed project):** backup for lab jobs that need more than 12 GB, or when the lab is unavailable.
+- **Bigger GPU:** if a job needs more than the L4's 24 GB, change the VM's machine type inside the same project; never move the data out of it.
 
 ## A3. Data use rules — highest priority
 
 PhysioNet's agreement forbids sharing credentialed data with third parties, including through APIs or online platforms. You run through an external API, so:
-1. **Credentialed data** = MIMIC-IV, MIMIC-CXR and anything derived from them: features, tensors, image caches, embeddings, attributions, evidence packets, generated explanations, checkpoints. It exists only on the lab machine or in my GCP project — never on this laptop, Kaggle, Colab or git.
+1. **Credentialed data** = MIMIC-IV, MIMIC-CXR and anything derived from them: features, tensors, image caches, embeddings, attributions, evidence packets, generated explanations, checkpoints. It exists only in my credentialed GCP project (the VM, its disks and its private buckets) — never on this laptop, Kaggle, Colab or git. Nothing credentialed is downloaded to this laptop, and no GCP resource that holds it is made public or shared outside the project.
 2. **You never see it.** Scripts that run on real data print aggregates only: counts, shapes, metrics, summary statistics. No IDs, rows, free text or images; suppress counts below 10. I paste those outputs back to you.
 3. **On this laptop** the data is: synthetic fixtures (`tests/fixtures/`), the open-access MIMIC-IV Clinical Database Demo in a local PostgreSQL database `mimiciv_demo`, a handful of public chest X-rays, and public corpora. You may read all of these.
-4. Real-database credentials live only in the lab machine's git-ignored `.env`.
+4. Real-database credentials live only in the GCP VM's git-ignored `.env`.
 5. `.gitignore` already covers `.env`, `data/`, `artifacts/`, `outputs/`, `reports/`, `checkpoints/`, `mlruns/`, `*.parquet`, `*.npz`, `*.npy`, `*.pt`, `*.safetensors`, and `*.csv` outside `tests/fixtures/`. `.claude/settings.json` denies reads on the same locations. Don't weaken either; if you think one needs changing, ask me.
 6. `legacy_los/` is a read-only snapshot of the internship code (tag `v1.0-internship`): no data, no git history. I place it there myself before Stage 0. Never edit it.
 
@@ -58,13 +60,13 @@ PhysioNet's agreement forbids sharing credentialed data with third parties, incl
 
 ## A5. Code that runs on both machines
 
-- **One codebase, two configs:** each pipeline has `configs/<stage>/smoke.yaml` (runs on this CPU in minutes, on demo or synthetic data) and `full.yaml` (lab). A stage isn't built until its smoke run passes end to end. Smoke results never back reported numbers.
+- **One codebase, two configs:** each pipeline has `configs/<stage>/smoke.yaml` (runs on this CPU in minutes, on demo or synthetic data) and `full.yaml` (the GCP VM). A stage isn't built until its smoke run passes end to end. Smoke results never back reported numbers.
 - Paths, database URL and device come from `.env` (template: `.env.example`); nothing is hard-coded.
 - Use `pathlib` and Python entry points (`python -m fate_icu...`), not shell scripts — the two machines may run different operating systems.
 - Pick the device at runtime: `cuda` if available, else `cpu`.
 - GPU-only packages (bitsandbytes, vLLM) go in an optional `gpu` extra and are imported lazily inside the functions that need them.
-- Tests marked `gpu` or `realdata` are skipped on this laptop; plain `pytest` must pass here.
-- Every stage adds a section to `docs/lab_runbook.md`: prerequisites, exact commands, expected runtime on the A2000, and which outputs to paste back to you.
+- Tests marked `gpu` or `realdata` are skipped on this laptop (they run on the GCP VM, where `FATE_MACHINE=gcp`); plain `pytest` must pass here.
+- Every stage adds a section to `docs/lab_runbook.md`: prerequisites, exact commands, expected runtime on the L4 VM and its approximate cost, and which outputs to paste back to you.
 
 ## A6. Stack
 
@@ -97,7 +99,7 @@ multi_modal_icu_los_prediction/
 - **Driver:** an evidence unit selected as important for one prediction, with a direction and an effect size.
 - **Evidence packet:** JSON holding the prediction and its drivers; the only patient information the LLM ever sees.
 - **Faithful / grounded:** the explanation names what actually moves the model (tested by deletion) / each medical claim is supported by the passage it cites.
-- **Smoke / full:** tiny CPU config on demo or synthetic data / real config for the lab.
+- **Smoke / full:** tiny CPU config on demo or synthetic data / real config for the GCP VM.
 
 ## A9. How to work with me
 
@@ -110,7 +112,7 @@ multi_modal_icu_los_prediction/
 
 ## A10. Current status
 
-Phase: build (laptop). Stage 0 build done (the user's contract review is pending). Stages 2, 1, 3 and 4 built (Stage 3 only smoke-run on the demo; Stage 4's synthetic benchmark is reviewed; ExtremalMask is the time-series default, IG elsewhere). Stage 5 code and smoke run done, its public data downloaded, and its corpus and BM25 index built (426,770 passages); the Kaggle GPU step, the dense index and the relevance grades are pending. Next: finish the Stage 5 index, then Stage 6.
+Phase: build (laptop); real runs on GCP (the lab is unavailable, D-049). Stage 0 build done (the user's contract review is pending). Stages 2, 1, 3 and 4 built (Stage 3 only smoke-run on the demo; Stage 4's synthetic benchmark is reviewed; ExtremalMask is the time-series default, IG elsewhere). Stage 3 resumes per arm for spot VMs (tested; 588 tests pass). Stage 5 code and smoke run done, its public data downloaded, and its corpus and BM25 index built (426,770 passages); the Kaggle GPU step, the dense index and the relevance grades are pending. Next: set up the GCP VM, finish the Stage 5 index, then Stage 6.
 
 ---
 
@@ -136,7 +138,7 @@ Phase: build (laptop). Stage 0 build done (the user's contract review is pending
 6. Laptop environment (Windows): give me the steps to load the MIMIC-IV demo into the local PostgreSQL database `mimiciv_demo` with the official mimic-code build scripts, and to build its derived concepts (including `sofa`) with mimic-code's PostgreSQL concept scripts. Then set up `.env.example`, the uv project with its `gpu` extra, pytest markers, pre-commit, the run-manifest and seeding utilities, a synthetic fixture generator that mirrors the real table schemas, and the `docs/` files listed in A7 (`STATUS.md`, `decisions.md`, `results_log.md`, `lab_runbook.md`; `stages.md` and `internship_metrics.md` already exist).
 7. Create `docs/hypotheses.md` as a template with sections H1–H5 to be filled in during Stage 7 (see `docs/stages.md`, Stage 7).
 
-**Run later (lab):**
+**Run later (GCP VM):**
 - Load full MIMIC-IV into PostgreSQL with the same scripts and schema names; build the derived concepts.
 - Run all legacy tests, including `realdata` ones; reproduce the internship's test metrics (`docs/internship_metrics.md`) within seed noise.
 

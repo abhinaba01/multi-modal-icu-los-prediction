@@ -25,6 +25,10 @@ Each finished stage gets a summary of at most 10 lines here.
   synthetic benchmark (`docs/attribution_benchmark.md`) is reviewed; your default is ExtremalMask for the time series, IG elsewhere (open: a
   relative-size condition on drivers). Not built: the semi-synthetic
   benchmark on real tensors and the validation report on the real model (lab).
+- **Run machine (2026-11-20, D-049):** the lab is not available, so all real jobs run on a GCP L4 spot VM
+  (runbook section "GCP: the run machine"). Stage 3 saves each arm as it is trained and resumes with
+  `--resume <run id>` (`tests/test_models_resume.py`). The laptop's Python was blocked by Windows Application
+  Control until the environment was rebuilt from a python.org 3.11 (2026-11-20); 588 tests now pass (3 skipped).
 - **Waiting for:** your review of `docs/contract.md` (Stage 0); for Stage 4, your decision on the relative-size condition on drivers; for Stage 5, the Kaggle GPU step,
   a browser spot-check of one StatPearls link (D-043), the open StatPearls questions (D-043) and
   your review of `configs/rag/pubmed_queries.yaml`.
