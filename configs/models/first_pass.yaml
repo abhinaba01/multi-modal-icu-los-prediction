@@ -1,0 +1,36 @@
+# Stage 3, first pass on the GCP VM: the arms that do not read an X-ray (B0 to B3), 1 seed.
+# Train these while the chest X-rays are still downloading. Later, add the image arms and more
+# seeds to the SAME run with:
+#   uv run python -m fate_icu.models.run --config configs/models/full.yaml --resume <run id>
+# (resume_problem in fate_icu.models.run lists what may change: more arms, more seeds, images
+# none -> mimic. Everything else, here the model size and the training recipe, must stay equal.)
+run_name: models_first_pass
+source: postgres
+require_frozen_threshold: true    # the long-stay threshold must be frozen in configs/contract.yaml first
+require_signal: true              # stop if a static feature is constant in train
+seed: 666
+n_seeds: 1                        # one seed to start with (CLAUDE.md A4 asks for 5 in the final run)
+arms: [B0, B1, B2, B3]
+model: {d: 256, heads: 4, layers: 2, dropout: 0.1}
+train:
+  epochs: 50
+  batch_size: 64
+  lr: 0.0003
+  weight_decay: 0.01
+  warmup_frac: 0.05
+  patience: 8
+  lambda_reg: 1.0                 # not tuned yet: tune on validation before the final run
+  p_drop_image: 0.3
+  p_drop_static: 0.1
+  p_drop_ts: 0.1
+  device: auto
+  autocast_bf16: true             # the L4 supports bf16
+n_boot: 1000
+timeseries_config: configs/timeseries/full.yaml
+cxr_config: configs/cxr/full.yaml
+timeseries_run: null          # set to the Stage 2 run id to reuse its tensors
+cxr_run: null
+images: none
+n_jobs: -1
+cache: true
+strict_sofa: true

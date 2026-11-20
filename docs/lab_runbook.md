@@ -211,16 +211,31 @@ column is missing, or if a selected image is dated after t0.
 - If `date_alignment.share_with_an_xray_during_an_icu_stay` is near zero, the X-ray and ICU
   timelines don't line up. Stop and tell me.
 
-### 1.3 Download only the selected images (hours)
+### 1.3 Copy only the selected images (minutes from the bucket; hours with wget)
 
-Run from `<parent>` again, giving the full path to the list:
+**Preferred: PhysioNet's Google Cloud bucket** (D-052). It needs the access you requested on the MIMIC-CXR-JPG page
+("Request access ... Google Cloud Storage Browser", granted to your Google account), and the VM signed in as that account:
+
+```
+gcloud auth login --no-launch-browser      # on the VM: open the printed address in your browser, paste the code back
+uv run python -m fate_icu.data.cxr.gcs_fetch --link-run <run_id> --billing-project <your project id>
+gcloud auth revoke <your Google account>   # when the copy is finished: do not leave your login on the VM
+```
+
+It copies exactly the files in `artifacts/cxr/<run_id>/image_list.txt` from `gs://mimic-cxr-jpg-2.1.0.physionet.org` to
+`MIMIC_CXR_DIR/files/...` with 16 copies at once, skips files already there (so it resumes), checks every file's hash, and
+prints counts only (failures go to `problems.txt` in `artifacts/cxr_fetch_runs/`). The bucket is requester-pays: your project
+pays the small transfer cost. PhysioNet lets you read a file by its exact name but not list the bucket, which is why the list
+from the link step is used. Add `--dry-run` first to see the command template. `--metadata` also copies the 16 MB metadata
+file (step 1.1) the same way.
+
+**Fallback: `wget`** (the PhysioNet web server, about 0.5 MB/s, so hours). Run from `<parent>`, giving the full path to the list:
 
 ```
 wget -r -N -c -np -nH --cut-dirs=1 --user <PHYSIONET_USERNAME> --ask-password -i <repo>/artifacts/cxr/<run_id>/image_list.txt --base=https://physionet.org/files/mimic-cxr-jpg/2.1.0/
 ```
 
-The images land in `MIMIC_CXR_DIR/files/...`. If interrupted, run the same command again:
-`-N -c` skips or resumes what is already there. Never download the full image set.
+The images land in `MIMIC_CXR_DIR/files/...`. If interrupted, run the same command again. Never download the full image set (567 GB).
 
 ### 1.4 Build the image cache (about 1 h for 15,000 images, CPU)
 
@@ -404,6 +419,18 @@ from a machine that has it.
 Set `timeseries_run` to the Stage 2 run id and `cxr_run` to the Stage 1 link run id: the model
 run then reuses them. Leave them `null` to rebuild both inside the run.
 
+### 3.2b First pass without images (use this while the X-rays are still downloading)
+
+```
+uv run python -m fate_icu.models.run --config configs/models/first_pass.yaml
+```
+
+It trains B0, B1, B2 and B3 for 1 seed. Note the run id it prints. Later, when the Stage 1 link and image cache exist, set `cxr_run` in `configs/models/full.yaml` and add the image arms and seeds to the same run:
+
+```
+uv run python -m fate_icu.models.run --config configs/models/full.yaml --resume <run id>
+```
+
 ### 3.3 Train every arm, 5 seeds (several hours on the A2000: time one seed first)
 
 ```
@@ -518,12 +545,17 @@ gcloud compute routers nats create fate-nat --router=fate-router --region=REGION
 
 ### G3. Disk and VM (about 10 minutes)
 
-A 500 GB data disk holds PostgreSQL (about 100 GB), the downloaded files, the image cache and the
-checkpoints. It survives when the VM is stopped or reclaimed.
+**Before this works on a new account** (both were needed on 2026-11-20):
+1. Upgrade the billing account from the free tier: Google refuses GPU VMs on it.
+2. Raise the project-wide quota `GPUS-ALL-REGIONS-per-project` from 0 to 1 (console: IAM & Admin > Quotas & System
+   Limits > filter by that name > Edit). The per-region L4 limits are already 1.
+
+A new project's SSD quota is 500 GB in total, boot and data disks together, hence the sizes below. The 450 GB
+data disk holds PostgreSQL (about 100 GB), the downloaded files, the image cache and the checkpoints. It is created
+with the VM, is kept (`auto-delete=no`) and survives when the VM is stopped or reclaimed.
 
 ```
-gcloud compute disks create fate-data --size=500GB --type=pd-balanced --zone=ZONE
-gcloud compute instances create fate-icu --zone=ZONE --machine-type=g2-standard-8 --provisioning-model=SPOT --instance-termination-action=STOP --maintenance-policy=TERMINATE --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud --boot-disk-size=100GB --boot-disk-type=pd-balanced --disk=name=fate-data,device-name=fate-data,mode=rw,boot=no --no-address --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --metadata=enable-oslogin=TRUE
+gcloud compute instances create fate-icu --zone=ZONE --machine-type=g2-standard-8 --provisioning-model=SPOT --instance-termination-action=STOP --maintenance-policy=TERMINATE --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud --boot-disk-size=50GB --boot-disk-type=pd-balanced --create-disk=name=fate-data,size=450GB,type=pd-balanced,auto-delete=no,device-name=fate-data --no-address --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --metadata=enable-oslogin=TRUE
 ```
 
 `g2-standard-8` comes with one L4 attached (no accelerator flag). If the zone has no spot L4 capacity the
@@ -541,14 +573,17 @@ gcloud compute ssh fate-icu --zone=ZONE --tunnel-through-iap
 On the VM. Check each step's output before the next.
 
 ```
-# the GPU driver, with Google's documented installer
-curl -L https://github.com/GoogleCloudPlatform/compute-gpu-installation/raw/main/linux/install_gpu_driver.py -o install_gpu_driver.py
-sudo python3 install_gpu_driver.py
+# the GPU driver from the Ubuntu archive. The VM has Secure Boot on, which refuses a locally built (DKMS)
+# module, so use Canonical's signed module for the running kernel and remove the DKMS copy:
+sudo apt-get install -y nvidia-driver-595-server linux-modules-nvidia-595-server-$(uname -r)
+sudo rm -f /lib/modules/$(uname -r)/updates/dkms/nvidia*.ko*; sudo depmod -a
+sudo reboot
+# reconnect after about a minute, then:
 nvidia-smi
 ```
 
-`nvidia-smi` must show an L4. Its "CUDA Version" line must be at least the one the locked torch needs
-(D-029 says CUDA 13 for torch 2.15): if it is lower, tell me and I will pin an older torch for the VM.
+`nvidia-smi` must show an L4 (the 2026-11-20 setup showed driver 595.91.07 and CUDA 13.2, which torch 2.15.0+cu132
+uses). If it says it cannot talk to the driver, Secure Boot is rejecting an unsigned module: use the signed package above.
 
 ```
 # mount the data disk
@@ -582,14 +617,19 @@ Give your Linux user a PostgreSQL role, so `psql` works without a password over 
 sudo -u postgres createuser --superuser $USER
 ```
 
-Clone the repository (the repo is private: use a fine-grained, read-only access token that you type when
-asked; never put it in a file in the repo) and install:
+Put the code on the VM without a GitHub token: on the laptop run `git bundle create fate-icu.bundle main` (everything
+must be committed), copy it with `gcloud compute scp fate-icu.bundle fate-icu:/tmp/ --tunnel-through-iap` (use absolute
+paths: the Windows copy tool does not expand `~`), then on the VM:
 
 ```
-cd /mnt/data && git clone https://github.com/abhinaba01/multi-modal-icu-los-prediction.git fate-icu
-cd fate-icu && uv sync
+cd /mnt/data && git clone /tmp/fate-icu.bundle fate-icu
+cd fate-icu && git checkout main
+export UV_CACHE_DIR=/mnt/data/uv-cache      # keeps the multi-GB cache off the small boot disk
+uv sync --python 3.11
 uv run python -c "import torch; print(torch.cuda.is_available())"
 ```
+
+(Or clone over HTTPS with a fine-grained read-only token typed on the VM and never saved in the repo.)
 
 Create `.env` from `.env.example` with `FATE_MACHINE=gcp`, `FATE_DB_URL=postgresql+psycopg:///mimiciv` (the local socket,
 no password) , and `FATE_DATA_DIR`, `FATE_ARTIFACTS_DIR`, `FATE_OUTPUTS_DIR` and `FATE_CHECKPOINTS_DIR` under
@@ -607,7 +647,9 @@ cd /mnt/data/fate-icu
 uv run python -m fate_icu.utils.mimic_load --step all --user <PHYSIONET_USERNAME> --dest /mnt/data/mimic/mimiciv/3.1 --code-dir /mnt/data/mimic-code
 ```
 
-The steps are `preflight` (tools, free disk, clones mimic-code at the pinned tag), `download`, `verify`
+By default it skips six medication and order tables the project never reads (`emar`, `emar_detail`, `pharmacy`, `poe`,
+`poe_detail`, `prescriptions`; D-051) and loads them empty from placeholder files; add `--skip-tables none` to download everything.
+The steps are `preflight` (tools, free disk, clones mimic-code at the pinned tag), `download`, `placeholders`, `verify`
 (every file against PhysioNet's checksum list), `load`, `concepts` and `check` (counts only; it fails if
 the ICU stay count is not the 94,458 of MIMIC-IV v3.1). Add `--dry-run` first to see every command
 without running it. To repeat one step, give it by name, for example `--step load`; a database that
@@ -643,3 +685,16 @@ continue if the config or the long-stay threshold changed.
 - Do not create snapshots or images of the data disk unless they stay in the project.
 - Keep the billing budget alert on.
 - Copy nothing off the VM except the aggregate text that each stage asks you to paste back.
+
+## Demo: the explainer page (laptop; open MIMIC-IV demo only)
+
+Prerequisite: the local `mimiciv_demo` database and `.env` (`FATE_MACHINE=laptop`, `FATE_DB_URL`). Runtime: first start about 5 s
+(trains and saves `artifacts/demo/demo_model.joblib`), later starts instantly. Cost: none.
+
+```
+uv run python -m fate_icu.demo.app
+```
+
+Open http://127.0.0.1:8765, type values, and press "Explain the stay". `--retrain` trains again;
+`--port N` changes the port. Stop with Ctrl+C. The page works offline. Say at the demo that the model is trained on 56 open-demo
+stays and shows how the explanation works; the real numbers come from the GCP runs (aggregates only).

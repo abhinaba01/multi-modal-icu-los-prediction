@@ -42,11 +42,17 @@ dependencies = [
     "captum>=0.7,<1",
     "time-interpret>=0.3,<0.4",
     "grad-cam>=1.5,<2",
+    # FaTE-ICU Stage 6: the LLM explainer (QLoRA SFT/DPO with TRL + PEFT; D-054). bitsandbytes
+    # and vLLM stay in the gpu extra and are imported lazily.
+    "peft>=0.13",
+    "trl>=0.12",
+    "accelerate>=1.0",
+    "datasets>=3",
 ]
 
 [project.optional-dependencies]
-# GPU-only packages (bitsandbytes, vLLM) are added in Stage 6 and imported lazily.
-gpu = []
+# GPU-only packages, imported lazily inside the functions that need them (CLAUDE.md A5).
+gpu = ["bitsandbytes>=0.43; sys_platform == 'linux'"]
 
 [dependency-groups]
 dev = [

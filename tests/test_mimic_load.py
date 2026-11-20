@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 from pathlib import Path
 
@@ -166,3 +167,77 @@ def test_the_loader_refuses_to_run_on_windows(monkeypatch):
 def test_unknown_steps_are_refused(tmp_path):
     with pytest.raises(SystemExit, match="unknown step"):
         ml.run_steps(["explode"], cfg(tmp_path), Recorder())
+
+
+# ---- skipping the tables this project never reads (D-051) ---------------------------------------
+
+
+def test_the_six_medication_tables_are_left_out_of_the_download_by_exact_name(tmp_path):
+    rec = Recorder()
+    ml.download(cfg(tmp_path), rec)
+    [(command, _)] = rec.calls
+    rejected = command[command.index("-R") + 1].split(",")
+    assert sorted(rejected) == sorted(f"{t}.csv.gz" for t in ml.SKIPPABLE)
+    assert set(ml.SKIPPABLE) == {"emar", "emar_detail", "pharmacy", "poe", "poe_detail", "prescriptions"}
+    assert "poe.csv.gz" in rejected and "poe_detail.csv.gz" in rejected  # exact names, no wildcard
+    assert not any("*" in name for name in rejected)
+
+
+def test_downloading_everything_is_still_possible(tmp_path):
+    rec = Recorder()
+    ml.download(cfg(tmp_path, skip=()), rec)
+    assert "-R" not in rec.calls[0][0]
+
+
+def test_a_table_the_project_needs_can_never_be_skipped(tmp_path, monkeypatch):
+    for needed in ("labevents", "chartevents", "icustays", "admissions", "patients", "inputevents"):
+        with pytest.raises(ValueError, match=f"cannot skip {needed}"):
+            cfg(tmp_path, skip=(needed,))
+    monkeypatch.setattr(ml.sys, "platform", "linux")  # the Windows guard would stop main() first
+    with pytest.raises(SystemExit, match="cannot skip labevents"):
+        ml.main(["--step", "check", "--skip-tables", "labevents"])
+
+
+def test_placeholders_replace_partial_files_and_load_as_empty_tables(tmp_path):
+    settings = cfg(tmp_path)
+    (settings.dest / "hosp").mkdir(parents=True)
+    partial = settings.dest / "hosp" / "emar.csv.gz"
+    partial.write_bytes(b"x" * 500_000)  # an interrupted download of a skipped table
+    made = ml.placeholders(settings)
+    assert sorted(made) == sorted(settings.skipped_files)
+    for relative in settings.skipped_files:
+        path = settings.dest / relative
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+        assert len(lines) == 1  # a header line only: COPY ... CSV HEADER then reads zero rows
+    assert partial.stat().st_size < 1000
+    marker = (settings.dest / ml.SKIP_MARKER).read_text(encoding="utf-8")
+    assert "emar_detail" in marker and "NOT downloaded" in marker
+
+
+def test_placeholders_do_nothing_in_a_dry_run_or_when_nothing_is_skipped(tmp_path, capsys):
+    settings = cfg(tmp_path, dry_run=True)
+    (settings.dest / "hosp").mkdir(parents=True)
+    ml.placeholders(settings)
+    assert not list((settings.dest / "hosp").iterdir()) and "placeholder" in capsys.readouterr().out
+    assert ml.placeholders(cfg(tmp_path, skip=())) == []
+
+
+def test_verify_ignores_the_skipped_files_and_their_placeholders(tmp_path):
+    settings = cfg(tmp_path)
+    (settings.dest / "hosp").mkdir(parents=True)
+    real = b"subject_id\n1\n"
+    (settings.dest / "hosp" / "patients.csv.gz").write_bytes(real)
+    lines = [f"{hashlib.sha256(real).hexdigest()}  hosp/patients.csv.gz"]
+    lines += [f"{'0' * 64}  {f}" for f in settings.skipped_files]  # files that are not downloaded
+    (settings.dest / "SHA256SUMS.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    ml.placeholders(settings)
+    summary = ml.verify(settings)
+    assert summary["ok"] is True and summary["files_ok"] == 1 and summary["n_missing"] == 0
+    # with nothing skipped the same list fails: the skipped files really are missing or different
+    with pytest.raises(SystemExit, match="damaged"):
+        ml.verify(cfg(tmp_path, skip=()))
+
+
+def test_the_steps_run_placeholders_between_the_download_and_the_check():
+    assert ml.STEPS.index("download") < ml.STEPS.index("placeholders") < ml.STEPS.index("verify")

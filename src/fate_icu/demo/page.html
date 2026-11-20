@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICU stay explainer</title>
+<style>
+:root{
+  --bg:#f3f5f9; --card:#ffffff; --ink:#142033; --muted:#5d6b7e; --line:#e2e7ef; --field:#f7f9fc;
+  --accent:#2457e6; --accent-2:#6a3df0; --longer:#d97706; --longer-bg:#fff4e0; --shorter:#2563eb; --shorter-bg:#e8efff;
+  --good:#0f9d6b; --bad:#d92d20; --shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px rgba(16,24,40,.06);
+  --hero:linear-gradient(120deg,#12306e 0%,#2457e6 55%,#6a3df0 100%);
+  --radius:16px;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d121a; --card:#151c27; --ink:#e9eef6; --muted:#97a5b8; --line:#243041; --field:#0f1520;
+    --accent:#7aa2ff; --accent-2:#a78bfa; --longer:#f5a65b; --longer-bg:#33260f; --shorter:#7fb0ff; --shorter-bg:#14274a;
+    --good:#4ade9d; --bad:#ff8b7f; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+    --hero:linear-gradient(120deg,#0b1f4d 0%,#1b3f9e 55%,#4527b8 100%); }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:15.5px/1.55 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif}
+.hero{background:var(--hero);color:#fff;padding:34px 16px 78px}
+.hero .in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:16px}
+.logo{width:48px;height:48px;border-radius:14px;background:rgba(255,255,255,.16);display:grid;place-items:center;flex:none}
+.hero h1{margin:0;font-size:1.7rem;letter-spacing:-.01em}
+.hero p{margin:2px 0 0;opacity:.86}
+.wrap{max-width:1180px;margin:-52px auto 0;padding:0 16px 48px}
+.grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:22px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+form.card{padding:6px 20px 20px}
+.res{position:sticky;top:16px;padding:22px;min-height:340px}
+@media (max-width:900px){.res{position:static}}
+fieldset{border:0;padding:0;margin:0;border-bottom:1px solid var(--line)}
+fieldset:last-of-type{border-bottom:0}
+legend{display:flex;align-items:center;gap:10px;font-weight:700;font-size:.95rem;padding:16px 0 10px;float:left;width:100%}
+legend+*{clear:both}
+.dot{width:28px;height:28px;border-radius:9px;background:var(--shorter-bg);color:var(--accent);display:grid;place-items:center;font-size:.85rem;flex:none}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;padding-bottom:16px}
+@media (max-width:520px){.fields{grid-template-columns:1fr}}
+label{display:block;font-size:.78rem;font-weight:600;color:var(--muted);line-height:1.25}
+input,select{width:100%;margin-top:5px;padding:9px 11px;font:inherit;font-weight:400;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:10px;transition:border-color .15s,box-shadow .15s}
+input:hover,select:hover{border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+input:focus,select:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+input.filled,select.filled{border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.bar-actions{position:sticky;bottom:0;display:flex;gap:10px;align-items:center;padding:14px 0 0;background:linear-gradient(transparent,var(--card) 30%)}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:11px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:10px 16px;transition:transform .08s,filter .15s}
+button:hover{filter:brightness(.97)} button:active{transform:translateY(1px)}
+button.primary{flex:1;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;border:0;padding:12px 16px;font-size:1rem}
+@media (prefers-color-scheme: dark){button.primary{color:#0b1220}}
+button:disabled{opacity:.65;cursor:wait}
+button:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 40%,transparent);outline-offset:2px}
+.err{color:var(--bad);font-size:.9rem;min-height:1.2em;margin-top:8px}
+.empty{display:grid;place-items:center;text-align:center;color:var(--muted);min-height:300px;gap:6px}
+.empty svg{opacity:.55}
+.fade{animation:fade .35s ease both}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.top{display:grid;grid-template-columns:150px 1fr;gap:18px;align-items:center;margin-bottom:16px}
+@media (max-width:520px){.top{grid-template-columns:1fr;justify-items:center;text-align:center}}
+.gauge{width:150px;height:96px;position:relative}
+.gauge svg{width:150px;height:96px;display:block}
+.gauge .pct{position:absolute;left:0;right:0;bottom:2px;text-align:center;font-size:1.65rem;font-weight:800;line-height:1}
+.gauge .lab{position:absolute;left:0;right:0;bottom:-18px;text-align:center;font-size:.7rem;color:var(--muted)}
+.days{font-size:2.5rem;font-weight:800;line-height:1;letter-spacing:-.02em}
+.days small{font-size:1rem;font-weight:600;color:var(--muted);margin-left:4px}
+.kicker{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.verdict{display:inline-block;margin-top:8px;font-size:.8rem;font-weight:700;padding:3px 10px;border-radius:999px}
+.verdict.longer{background:var(--longer-bg);color:var(--longer)} .verdict.shorter{background:var(--shorter-bg);color:var(--shorter)}
+.story{border-left:4px solid var(--accent);background:var(--field);border-radius:0 12px 12px 0;padding:14px 16px;margin:22px 0 4px;font-size:1.03rem}
+.story p{margin:0 0 9px} .story p:last-child{margin:0}
+.chip{display:inline-block;font-size:.68rem;font-weight:800;padding:0 7px;margin:0 1px;border-radius:999px;vertical-align:1px;background:var(--line);color:var(--muted)}
+.chip.longer{background:var(--longer-bg);color:var(--longer)} .chip.shorter{background:var(--shorter-bg);color:var(--shorter)}
+h2{font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:24px 0 10px}
+.driver{display:grid;grid-template-columns:34px 1fr;gap:4px 12px;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:var(--card)}
+.driver .id{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:.8rem}
+.driver .id.longer{background:var(--longer-bg);color:var(--longer)} .driver .id.shorter{background:var(--shorter-bg);color:var(--shorter)}
+.driver .name{font-weight:700}
+.driver .arrow{font-size:.78rem;font-weight:700;margin-left:6px}
+.driver .arrow.longer{color:var(--longer)} .driver .arrow.shorter{color:var(--shorter)}
+.sub2{color:var(--muted);font-size:.86rem}
+.effect{grid-column:2;height:7px;border-radius:999px;background:var(--line);overflow:hidden;margin-top:4px}
+.effect i{display:block;height:100%;border-radius:999px;transform-origin:left;animation:grow .6s ease both}
+.effect i.longer{background:var(--longer)} .effect i.shorter{background:var(--shorter)}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.fe{display:grid;grid-template-columns:minmax(0,1.5fr) 56px minmax(0,1fr);gap:10px;align-items:center;font-size:.84rem;padding:4px 0}
+.fe .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fe .val{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.mid{position:relative;height:10px;background:var(--line);border-radius:999px}
+.mid:after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--muted);opacity:.5}
+.mid i{position:absolute;top:0;bottom:0}
+.mid i.longer{left:50%;background:var(--longer);border-radius:0 999px 999px 0}
+.mid i.shorter{right:50%;background:var(--shorter);border-radius:999px 0 0 999px}
+.legend{display:flex;gap:16px;margin-top:8px;font-size:.78rem;color:var(--muted)}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.check{margin-top:18px;padding:10px 12px;border-radius:10px;font-size:.82rem;display:flex;gap:8px;align-items:flex-start}
+.check.ok{background:color-mix(in srgb,var(--good) 12%,transparent);color:var(--good)}
+.check.bad{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad)}
+footer{max-width:1180px;margin:0 auto;padding:0 16px 32px;color:var(--muted);font-size:.8rem;text-align:center}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="in">
+    <div class="logo" aria-hidden="true">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>
+    </div>
+    <div>
+      <h1>ICU stay explainer</h1>
+      <p>Enter a patient's first 24 hours. Get the expected length of stay and the reasons behind it.</p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="grid">
+    <form class="card" id="form" autocomplete="off">
+      <div id="fields"></div>
+      <div class="bar-actions">
+        <button class="primary" type="submit" id="go">Explain the stay</button>
+        <button type="button" id="clear">Clear</button>
+      </div>
+      <div class="err" id="err" role="alert"></div>
+    </form>
+
+    <section class="card res" id="out" aria-live="polite"></section>
+  </div>
+</main>
+<footer id="foot"></footer>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let meta = null;
+const ICONS = { "Patient": "👤", "Vital signs": "♥", "Laboratory": "⚗", "Organ function": "⚕" };
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids) e.append(k);
+  return e;
+}
+
+function icon(section) {
+  for (const [k, v] of Object.entries(ICONS)) if (section.startsWith(k)) return v;
+  return "•";
+}
+
+function placeholder() {
+  const out = $("out");
+  out.textContent = "";
+  out.append(el("div", { class: "empty" },
+    (() => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      s.setAttribute("width", "56"); s.setAttribute("height", "56"); s.setAttribute("viewBox", "0 0 24 24");
+      s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", "1.5");
+      s.innerHTML = '<path d="M3 12h4l2-6 4 12 2-6h6" stroke-linecap="round" stroke-linejoin="round"/>'; return s; })(),
+    el("strong", { text: "No patient explained yet" }),
+    el("span", { text: "Fill in what you know on the left, then press “Explain the stay”." })));
+}
+
+function buildForm(fields) {
+  const host = $("fields");
+  host.textContent = "";
+  const sections = [...new Set(fields.map((f) => f.section))];
+  for (const s of sections) {
+    const grid = el("div", { class: "fields" });
+    for (const f of fields.filter((x) => x.section === s)) {
+      const id = "f_" + f.name;
+      const label = el("label", { for: id, text: f.label });
+      let input;
+      if (f.kind === "choice") {
+        input = el("select", { id, name: f.name }, el("option", { value: "", text: "not recorded" }));
+        for (const o of f.options) input.append(el("option", { value: o, text: o }));
+      } else {
+        input = el("input", { id, name: f.name, type: "number", inputmode: "decimal", min: f.min, max: f.max, step: "any" });
+        if (f.example !== null && f.example !== undefined) input.placeholder = "e.g. " + f.example;
+      }
+      input.addEventListener("input", () => input.classList.toggle("filled", input.value !== ""));
+      label.append(input);
+      grid.append(label);
+    }
+    host.append(el("fieldset", {}, el("legend", {}, el("span", { class: "dot", text: icon(s) }), s), grid));
+  }
+}
+
+function setValues(values) {
+  for (const f of meta.fields) { const i = $("f_" + f.name); if (i) { i.value = values[f.name] ?? ""; i.classList.toggle("filled", i.value !== ""); } }
+  $("err").textContent = "";
+}
+
+function readValues() {
+  const out = {};
+  for (const f of meta.fields) { const v = $("f_" + f.name).value.trim(); if (v !== "") out[f.name] = v; }
+  return out;
+}
+
+function chips(text, drivers) {
+  const dir = Object.fromEntries(drivers.map((d) => [d.id, d.direction]));
+  const frag = document.createDocumentFragment();
+  let last = 0;
+  for (const m of text.matchAll(/\[(D\d+|R\d+)\]/g)) {
+    frag.append(text.slice(last, m.index));
+    frag.append(el("span", { class: "chip " + (dir[m[1]] || ""), text: m[1], title: "see reason " + m[1] }));
+    last = m.index + m[0].length;
+  }
+  frag.append(text.slice(last));
+  return frag;
+}
+
+function gauge(pct) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 150 96");
+  const arc = (cls, stroke, frac) => {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", "M15 80 A60 60 0 0 1 135 80");
+    p.setAttribute("fill", "none"); p.setAttribute("stroke-width", "14"); p.setAttribute("stroke-linecap", "round");
+    p.setAttribute("stroke", stroke);
+    if (frac !== null) { p.setAttribute("pathLength", "100"); p.setAttribute("stroke-dasharray", frac + " 100"); }
+    return p;
+  };
+  svg.append(arc("bg", "var(--line)", null));
+  const fill = arc("fg", pct >= 50 ? "var(--longer)" : "var(--shorter)", Math.max(pct, 1));
+  svg.append(fill);
+  return svg;
+}
+
+function render(r) {
+  const out = $("out");
+  out.textContent = "";
+  const p = r.prediction;
+  const pct = Math.round(p.p_long_stay * 100);
+  const long = pct >= 50;
+  const wrap = el("div", { class: "fade" });
+
+  const g = el("div", { class: "gauge" }, gauge(pct), el("div", { class: "pct", text: pct + "%" }));
+  const top = el("div", { class: "top" }, g,
+    el("div", {},
+      el("div", { class: "kicker", text: "Expected ICU stay" }),
+      el("div", { class: "days" }, "~" + p.predicted_los_days.toFixed(1), el("small", { text: "days" })),
+      el("span", { class: "verdict " + (long ? "longer" : "shorter"),
+        text: (long ? "Likely a long stay" : "Likely a short stay") + " · threshold " + p.long_stay_threshold_days + " days" })));
+  wrap.append(top);
+
+  const story = el("div", { class: "story" });
+  for (const s of r.sentences) story.append(el("p", {}, chips(s, r.drivers)));
+  wrap.append(story);
+
+  wrap.append(el("h2", { text: "Why: the reasons the model used" }));
+  const maxAbs = Math.max(...r.drivers.map((d) => Math.abs(d.effect)), 0.001);
+  for (const d of r.drivers) {
+    const arrow = d.direction === "longer" ? "↑ longer stay" : "↓ shorter stay";
+    const w = Math.max(4, Math.round(100 * Math.abs(d.effect) / maxAbs));
+    wrap.append(el("div", { class: "driver" },
+      el("div", { class: "id " + d.direction, text: d.id }),
+      el("div", {}, el("span", { class: "name", text: d.label }), el("span", { class: "arrow " + d.direction, text: arrow }),
+        el("div", { class: "sub2", text: d.observed || "" })),
+      el("div", { class: "effect" }, el("i", { class: d.direction, style: "width:" + w + "%" }))));
+  }
+
+  wrap.append(el("h2", { text: "Single values that moved the estimate most" }));
+  const maxF = Math.max(...r.feature_effects.map((f) => Math.abs(f.effect)), 0.001);
+  for (const f of r.feature_effects) {
+    const dir = f.effect >= 0 ? "longer" : "shorter";
+    const w = Math.round(50 * Math.abs(f.effect) / maxF);
+    wrap.append(el("div", { class: "fe" },
+      el("span", { class: "nm", text: f.label, title: f.label }),
+      el("span", { class: "val", text: f.value }),
+      el("div", { class: "mid", title: (f.effect >= 0 ? "+" : "") + f.effect.toFixed(2) + " in log-odds" }, el("i", { class: dir, style: "width:" + w + "%" }))));
+  }
+  wrap.append(el("div", { class: "legend" },
+    el("span", {}, el("b", { style: "background:var(--longer)" }), "pushes toward a longer stay"),
+    el("span", {}, el("b", { style: "background:var(--shorter)" }), "toward a shorter stay"),
+    el("span", { text: r.entered + " entered · " + r.not_recorded + " not recorded" })));
+
+  wrap.append(el("div", { class: "check " + (r.valid ? "ok" : "bad") },
+    el("span", { text: r.valid ? "✓" : "!" }),
+    el("span", { text: r.valid
+      ? "Checked: every sentence cites its reasons, uses only numbers from them, and gives no treatment advice."
+      : "This explanation broke the output contract: " + r.failures.join(", ") })));
+  out.append(wrap);
+}
+
+async function submit(ev) {
+  ev.preventDefault();
+  $("err").textContent = "";
+  $("go").disabled = true;
+  try {
+    const res = await fetch("/api/explain", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(readValues()) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "something went wrong");
+    render(data);
+    if (window.innerWidth <= 900) $("out").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    $("err").textContent = e.message;
+  } finally {
+    $("go").disabled = false;
+  }
+}
+
+async function init() {
+  const res = await fetch("/api/options");
+  meta = await res.json();
+  buildForm(meta.fields);
+  placeholder();
+  $("clear").addEventListener("click", () => { setValues({}); placeholder(); });
+  $("form").addEventListener("submit", submit);
+  $("foot").textContent = "Model trained on " + meta.trained_on + " ICU stays";
+}
+init().catch((e) => { $("err").textContent = "Could not load the form: " + e.message; });
+</script>
+</body>
+</html>

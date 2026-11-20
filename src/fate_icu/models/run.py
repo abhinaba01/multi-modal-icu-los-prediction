@@ -45,8 +45,9 @@ from fate_icu.models.arms import (
     sized,
 )
 from fate_icu.models.data import StayData, assemble
-from fate_icu.models.image import WEIGHTS, cached_features, load_image_encoder
+from fate_icu.models.image import FEATURE_WIDTH, WEIGHTS, cached_features, load_image_encoder
 from fate_icu.models.train import TrainConfig, save_trained
+from fate_icu.rag.drivers import image_concepts
 from fate_icu.tabular._legacy import legacy_config, legacy_tree_sha256
 from fate_icu.tabular.api import TabularTables, load_splits, load_tables
 from fate_icu.tabular.model import train_two_stage_xgb
@@ -87,7 +88,9 @@ class ModelsRunConfig(BaseModel):
     # building it again; the lab config sets these so a model run never rebuilds its inputs.
     timeseries_run: str | None = None
     cxr_run: str | None = None
-    images: Literal["fixtures", "mimic"]
+    # "none": no X-rays at all, so only the arms that do not read one can run (B0 to B3); a later run
+    # with --resume and "mimic" adds the image arms without retraining those (D-050)
+    images: Literal["fixtures", "mimic", "none"]
     image_weights: str = WEIGHTS
     cache: bool = True
     strict_sofa: bool = True
@@ -98,6 +101,54 @@ class ModelsRunConfig(BaseModel):
 def load_run_config(path: str | Path) -> ModelsRunConfig:
     with Path(path).open("r", encoding="utf-8") as handle:
         return ModelsRunConfig.model_validate(yaml.safe_load(handle))
+
+
+IMAGE_ARMS = frozenset({"B4", "B5", "B6", "M", "M_transformer"})  # every arm that reads an X-ray
+# What a resumed run may differ in: more arms, more seeds, the image source (none -> mimic), the
+# bootstrap size and bookkeeping. Anything else (model size, training recipe, source, seed, the
+# tensors) must be the same, or the saved arms would not belong to the new run.
+RESUME_MAY_CHANGE = frozenset(
+    {
+        "arms",
+        "n_seeds",
+        "images",
+        "cxr_run",
+        "cxr_config",
+        "image_weights",
+        "n_boot",
+        "run_name",
+        "timeseries_run",
+    }
+)
+
+
+def check_arms_fit_images(config: ModelsRunConfig) -> None:
+    """Without images only the arms that do not read an X-ray can run: never train them silently."""
+    if config.images == "none":
+        needing = sorted(set(config.arms) & IMAGE_ARMS)
+        if needing:
+            raise ValueError(
+                f"images: none cannot train {', '.join(needing)}: they read the chest X-ray. "
+                "Train B0 to B3 first, then add these with --resume and images: mimic"
+            )
+
+
+def resume_problem(before: dict, now: dict) -> str | None:
+    """Why a run cannot be resumed with a new config, or None when it can.
+
+    Adding arms and seeds, and turning on images that were off, are allowed. Removing arms or
+    seeds, or changing anything that shapes a model, is not.
+    """
+    for key in sorted(set(before) | set(now)):
+        if key not in RESUME_MAY_CHANGE and before.get(key) != now.get(key):
+            return f"{key} changed"
+    if not set(before["arms"]) <= set(now["arms"]):
+        return "arms were removed"
+    if now["n_seeds"] < before["n_seeds"]:
+        return "there are fewer seeds than before"
+    if before["images"] != now["images"] and before["images"] != "none":
+        return "images changed (only none -> an image source is allowed)"
+    return None
 
 
 def resolve_run(settings: Settings, kind: str, value: str) -> Path:
@@ -209,7 +260,7 @@ class Prepared:
     encoding: Any
     ts_dir: Path
     ts_report: dict
-    link_dir: Path
+    link_dir: Path | None  # None when the run has no images
     image_report: dict
     raw: np.ndarray  # [N, T, C] hourly values in original units, NaN = not measured
     image_keys: dict[int, str]  # stay_id -> key of its image in the image cache
@@ -245,15 +296,26 @@ def prepare_inputs(
         )
         ts_dir = Path(ts_report["out_dir"])
     tensors = ts_build.load_tensors(ts_dir)
-    if config.cxr_run:
-        link_dir = resolve_run(settings, "cxr", config.cxr_run)
+    link_dir: Path | None
+    if config.images == "none":
+        # no X-rays: every stay has none, and the vector length is still the encoder's so that
+        # the saved models fit the later run that adds the image arms
+        link_dir, image_features, image_keys = None, {}, {}
+        image_dim = FEATURE_WIDTH + len(image_concepts(config.image_weights))
+        image_report = {"images": "none"}
     else:
-        link_report = cxr_link.run(
-            cxr_link.load_config(REPO_ROOT / config.cxr_config), contract, tables=tables, settings=settings
-        )
-        link_dir = Path(link_report["out_dir"])
-    paired = pd.read_parquet(link_dir / cxr_link.PAIRED_FILE)
-    image_features, image_dim, image_report, image_keys = image_features_by_stay(config, settings, paired)
+        if config.cxr_run:
+            link_dir = resolve_run(settings, "cxr", config.cxr_run)
+        else:
+            link_report = cxr_link.run(
+                cxr_link.load_config(REPO_ROOT / config.cxr_config),
+                contract,
+                tables=tables,
+                settings=settings,
+            )
+            link_dir = Path(link_report["out_dir"])
+        paired = pd.read_parquet(link_dir / cxr_link.PAIRED_FILE)
+        image_features, image_dim, image_report, image_keys = image_features_by_stay(config, settings, paired)
     unknown_stays = set(image_features) - set(tensors["stay_ids"].tolist())
     image_features = {s: v for s, v in image_features.items() if s not in unknown_stays}
 
@@ -341,16 +403,35 @@ def run(
     settings: Settings | None = None,
     resume: str | None = None,
 ) -> dict[str, Any]:
-    """Train every arm and seed. ``resume`` is the run id of an interrupted run: finished arms are
-    read back and only the rest is trained (the config must be the same)."""
+    """Train every arm and seed.
+
+    ``resume`` is the run id of an earlier or interrupted run: finished arms and seeds are read
+    back and only the rest is trained. The new config may add arms, add seeds and turn on images
+    that were off (``resume_problem`` says what else must stay the same); it reuses the earlier
+    run's hourly tensors, so the saved models and the new ones see identical inputs.
+    """
     contract = contract or load_contract()
     settings = settings or load_settings()
     run_id = resume or new_run_id(config.run_name)
     out_dir = settings.outputs_dir / "models" / run_id
+    ckpt_dir = settings.checkpoints_dir / "models" / run_id
+    inputs_file = ckpt_dir / "inputs.json"
     seed_everything(config.seed)
     unknown = [a for a in config.arms if a != "B0" and a not in ARMS]
     if unknown:
         raise ValueError(f"unknown arms {unknown}; known: B0, {', '.join(ARMS)}")
+    check_arms_fit_images(config)
+
+    before: dict | None = None
+    if resume:
+        if not inputs_file.exists():
+            raise FileNotFoundError(f"cannot resume {resume}: no {inputs_file}")
+        before = json.loads(inputs_file.read_text(encoding="utf-8"))
+        problem = resume_problem(before["config"], json.loads(json.dumps(config.model_dump())))
+        if problem:
+            raise ValueError(f"cannot resume {resume}: {problem}. Start a new run instead.")
+        if config.timeseries_run is None:  # the same tensors as the earlier arms were trained on
+            config = config.model_copy(update={"timeseries_run": before["timeseries_run"]})
 
     prep = prepare_inputs(config, contract, settings, tables)
     tables, split, threshold, threshold_source = (
@@ -370,27 +451,24 @@ def run(
     neural = [a for a in config.arms if a != "B0"]
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    ckpt_dir = settings.checkpoints_dir / "models" / run_id
-    inputs_file = ckpt_dir / "inputs.json"
     record = {
         "run_id": run_id,
         "config": json.loads(json.dumps(config.model_dump())),
         "timeseries_run": str(prep.ts_dir),
-        "cxr_run": str(prep.link_dir),
+        "timeseries_tensor_sha256": ts_report["tensor_sha256"],
+        "cxr_run": None if prep.link_dir is None else str(prep.link_dir),
         "threshold_days": threshold,
         "threshold_source": threshold_source,
     }
-    if resume:
-        if not inputs_file.exists():
-            raise FileNotFoundError(f"cannot resume {resume}: no {inputs_file}")
-        before = json.loads(inputs_file.read_text(encoding="utf-8"))
-        if before["config"] != record["config"] or before["threshold_days"] != threshold:
-            raise ValueError(
-                "the config or the long-stay threshold changed since the run started: start a new run"
-            )
-    else:
-        ckpt_dir.mkdir(parents=True, exist_ok=True)
-        inputs_file.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    if before is not None:
+        if before["threshold_days"] != threshold:
+            raise ValueError("the long-stay threshold changed since the run started: start a new run")
+        if before.get("timeseries_tensor_sha256") != record["timeseries_tensor_sha256"]:
+            raise ValueError("the hourly tensors differ from the ones the saved arms were trained on")
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    inputs_file.write_text(
+        json.dumps(record, indent=2), encoding="utf-8"
+    )  # the latest config, for the next resume
 
     per_seed: dict[str, dict[str, list[dict]]] = {a: {p: [] for p in POPULATIONS} for a in config.arms}
     for seed in seeds:

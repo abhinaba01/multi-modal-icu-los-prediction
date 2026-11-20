@@ -7,8 +7,11 @@ It automates the steps of docs/lab_runbook.md 0.1, one step at a time so each ca
 
 * ``preflight``  tools, free disk space and the mimic-code checkout (cloned at the pinned tag);
 * ``download``   ``wget`` from PhysioNet; wget asks for your password itself (never passed on a
-                 command line or stored), and ``-c -N`` resumes a broken download;
-* ``verify``     every file against PhysioNet's ``SHA256SUMS.txt``;
+                 command line or stored), and ``-c -N`` resumes a broken download. The six medication
+                 and order tables this project never reads (``SKIPPABLE``) are not downloaded;
+* ``placeholders`` header-only stand-ins for those tables, so mimic-code's load script, which expects
+                 every file, still runs (the tables are created empty);
+* ``verify``     every downloaded file against PhysioNet's ``SHA256SUMS.txt``;
 * ``load``       create the database and run mimic-code's create, load, constraint and index scripts;
 * ``concepts``   mimic-code's derived concepts (``mimiciv_derived``, including ``sofa``);
 * ``check``      row counts, printed as counts only (no rows, no identifiers).
@@ -22,6 +25,7 @@ runbook); no database password is read or logged here.
 from __future__ import annotations
 
 import argparse
+import gzip
 import shutil
 import subprocess
 import sys
@@ -37,7 +41,11 @@ MIMIC_CODE_URL = "https://github.com/MIT-LCP/mimic-code.git"
 PHYSIONET_URL = f"https://physionet.org/files/mimiciv/{MIMIC_VERSION}/"
 EXPECTED_ICU_STAYS = {"3.1": 94_458}  # docs/lab_runbook.md 0.1
 MIN_FREE_GB = 150
-STEPS = ("preflight", "download", "verify", "load", "concepts", "check")
+STEPS = ("preflight", "download", "placeholders", "verify", "load", "concepts", "check")
+# Big hospital tables of medication administration and orders: nothing in the contract cohort, the hourly
+# variables or the SOFA and vasopressor concepts reads them (D-051). Only these may be skipped.
+SKIPPABLE = ("emar", "emar_detail", "pharmacy", "poe", "poe_detail", "prescriptions")
+SKIP_MARKER = "SKIPPED_TABLES.txt"
 TOOLS = ("wget", "psql", "createdb", "git", "gzip")
 BUILD_SCRIPTS = ("create.sql", "load_gz.sql", "constraint.sql", "index.sql")
 Runner = Callable[[Sequence[str], Path | None], int]
@@ -53,6 +61,18 @@ class Settings:
     min_free_gb: int = MIN_FREE_GB
     dry_run: bool = False
     force: bool = False
+    skip: tuple[str, ...] = SKIPPABLE  # hosp tables not downloaded; () downloads everything
+
+    def __post_init__(self) -> None:
+        unknown = [t for t in self.skip if t not in SKIPPABLE]
+        if unknown:
+            raise ValueError(
+                f"cannot skip {', '.join(unknown)}: only {', '.join(SKIPPABLE)} are safe to leave out"
+            )
+
+    @property
+    def skipped_files(self) -> list[str]:
+        return [f"hosp/{table}.csv.gz" for table in self.skip]
 
     @property
     def build_dir(self) -> Path:
@@ -118,19 +138,61 @@ def preflight(cfg: Settings, runner: Runner = run_command, which=shutil.which) -
 def download(cfg: Settings, runner: Runner = run_command) -> None:
     if not cfg.user:
         raise SystemExit("give your PhysioNet username with --user (the password is asked by wget)")
-    _run(
-        cfg, runner,
-        ["wget", "-r", "-N", "-c", "-np", "-nH", "--cut-dirs=3", "-P", str(cfg.dest),
-         "--user", cfg.user, "--ask-password", PHYSIONET_URL],
-    )  # fmt: skip
+    command = ["wget", "-r", "-N", "-c", "-np", "-nH", "--cut-dirs=3", "-P", str(cfg.dest)]
+    if cfg.skip:  # exact file names: "poe.csv.gz" does not match "poe_detail.csv.gz"
+        command += ["-R", ",".join(f"{table}.csv.gz" for table in cfg.skip)]
+    _run(cfg, runner, [*command, "--user", cfg.user, "--ask-password", PHYSIONET_URL])
+
+
+def placeholders(cfg: Settings) -> list[str]:
+    """Header-only stand-ins for the skipped tables, replacing any partial download.
+
+    mimic-code's ``load_gz.sql`` copies every table from its file, so a missing file would stop the
+    load. A file holding only a header line loads as an empty table. ``SKIPPED_TABLES.txt`` records
+    what is empty, so nobody mistakes it for the real data.
+    """
+    if not cfg.skip:
+        return []
+    for relative in cfg.skipped_files:
+        print(f"placeholder (empty table): {relative}")
+        if cfg.dry_run:
+            continue
+        path = cfg.dest / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            handle.write("placeholder_not_downloaded\n")
+    if not cfg.dry_run:
+        (cfg.dest / SKIP_MARKER).write_text(
+            "These hosp tables were NOT downloaded and are loaded empty (D-051):\n"
+            + "\n".join(cfg.skip)
+            + "\n",
+            encoding="utf-8",
+        )
+    return list(cfg.skipped_files)
+
+
+def _filtered_manifest(cfg: Settings) -> str:
+    """The name of a checksum list without the skipped files (their placeholders have other hashes)."""
+    manifest = cfg.dest / "SHA256SUMS.txt"
+    if not cfg.skip:
+        return manifest.name
+    skipped = set(cfg.skipped_files)
+    kept = [
+        line
+        for line in manifest.read_text(encoding="utf-8").splitlines()
+        if line.strip() and line.split(None, 1)[1].strip() not in skipped
+    ]
+    name = "SHA256SUMS.downloaded.txt"
+    (cfg.dest / name).write_text("\n".join(kept) + "\n", encoding="utf-8")
+    return name
 
 
 def verify(cfg: Settings) -> dict:
     """Check every downloaded file against PhysioNet's checksum list; counts only."""
     if cfg.dry_run:
-        print(f"would verify {cfg.dest} against SHA256SUMS.txt")
+        print(f"would verify {cfg.dest} against SHA256SUMS.txt (skipping {len(cfg.skip)} tables)")
         return {}
-    result = check_manifest(cfg.dest, manifest_name="SHA256SUMS.txt", log=print)
+    result = check_manifest(cfg.dest, manifest_name=_filtered_manifest(cfg), log=print)
     summary = {k: result[k] for k in ("files_ok", "n_missing", "n_changed", "ok")}
     print(f"verify: {summary}")
     if result["n_missing"] or result["n_changed"]:
@@ -196,6 +258,8 @@ def run_steps(steps: Sequence[str], cfg: Settings, runner: Runner = run_command)
             preflight(cfg, runner)
         elif step == "download":
             download(cfg, runner)
+        elif step == "placeholders":
+            placeholders(cfg)
         elif step == "verify":
             verify(cfg)
         elif step == "load":
@@ -218,21 +282,28 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--min-free-gb", type=int, default=MIN_FREE_GB)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true", help="rebuild even if the database is already loaded")
+    parser.add_argument(
+        "--skip-tables",
+        default=",".join(SKIPPABLE),
+        help=f"hosp tables to leave out (default: {', '.join(SKIPPABLE)}); 'none' downloads everything",
+    )
     args = parser.parse_args(argv)
     if sys.platform.startswith("win"):
         raise SystemExit(
             "run this on the GCP VM, not on the laptop: credentialed data never goes to the laptop"
         )
-    cfg = Settings(
-        args.dest,
-        args.code_dir,
-        args.db,
-        args.user,
-        MIMIC_VERSION,
-        args.min_free_gb,
-        args.dry_run,
-        args.force,
+    skip = (
+        ()
+        if args.skip_tables.strip().lower() == "none"
+        else tuple(t.strip() for t in args.skip_tables.split(",") if t.strip())
     )
+    try:
+        cfg = Settings(
+            args.dest, args.code_dir, args.db, args.user, MIMIC_VERSION, args.min_free_gb,
+            args.dry_run, args.force, skip,
+        )  # fmt: skip
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     run_steps(STEPS if args.step == "all" else [args.step], cfg)
 
 

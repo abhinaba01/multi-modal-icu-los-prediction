@@ -919,3 +919,96 @@ the 100 GB database across reclaims and stops.
 **Not verified yet.** The commands in the GCP section have not been run: this laptop cannot create the
 VM from here. Treat the first run as the test, and tell me what differs (zone capacity, the driver's
 CUDA version against torch 2.15, the PostgreSQL version and paths).
+
+## D-050 · 2026-11-20 · Stage 3 trains B0 to B3 first (no images), and a resumed run can add arms and seeds
+
+**Decision (your choice, for the demo).**
+- `images: none` in a models config trains only the arms that do not read an X-ray (B0, B1, B2, B3). Asking for
+  B4, B5, B6, M or M_transformer with `images: none` stops with a message; nothing is trained quietly without an image.
+  Every stay then has no image, and the image vector keeps the encoder's length (1,035 values) so the saved
+  models fit the later run that adds the image arms. `configs/models/first_pass.yaml` is this first pass: B0 to B3,
+  1 seed.
+- `--resume <run id>` now accepts a new config that **adds arms, adds seeds, and turns images on** (none to an image
+  source). It refuses anything else that shapes a model (model size, training recipe, source, seed, the long-stay
+  threshold), removing arms or seeds, or turning images off. `resume_problem` lists the rule. The resumed run reuses the
+  earlier run's hourly tensors and checks their hash, so old and new arms see identical inputs. The latest config is
+  written back to `inputs.json` for the next resume.
+- Order of the demo path: first pass (B0 to B3, 1 seed), then `full.yaml` with `--resume` for the image arms, then more
+  seeds (CLAUDE.md A4 asks for 5 in the final run; 1 is used first by your choice).
+
+**Alternatives.** Waiting for the X-rays before training anything; a separate run for the image arms (it would not share
+the tensors or the seeds' bookkeeping).
+**Reason.** The X-ray download and the Stage 1 link are the slowest steps, and four of the nine arms do not need them. Training
+those first gives real results sooner and uses the GPU while the images download.
+
+**Tested.** `tests/test_models_images_none.py` (12 tests, including a demo run that trains B0 to B2 without images and
+then resumes with B4, M and a second seed, checking that the first models are not retrained). The whole suite: 615 passed,
+3 skipped.
+
+## D-051 · 2026-11-20 · The MIMIC download skips six tables this project never reads
+
+**Decision (your choice).**
+- `fate_icu.utils.mimic_load` no longer downloads `emar`, `emar_detail`, `pharmacy`, `poe`, `poe_detail` and
+  `prescriptions` (hospital medication administration and order tables, roughly a third of the download by my
+  estimate). It rejects them in `wget` by exact file name, writes a header-only placeholder file for each so that
+  mimic-code's `load_gz.sql`, which expects every file, still runs (the tables load empty), records them in
+  `SKIPPED_TABLES.txt`, and checks the other files against PhysioNet's checksum list without the skipped ones.
+- Only these six may be skipped: asking to skip any table the project needs (for example `labevents` or
+  `chartevents`) is refused. `--skip-tables none` downloads everything.
+- Why it is safe: the contract cohort, the hourly variables and the SOFA and vasopressor concepts read `patients`,
+  `admissions`, `icustays`, `chartevents`, `labevents`, `inputevents`, `outputevents`, `procedureevents` and the lookup
+  tables, not these six. mimic-code's make-concepts builds some concepts (antibiotics, infection) from `prescriptions`,
+  `pharmacy` and `microbiologyevents`; those come out empty and nothing here uses them.
+- The check after the load still demands the known ICU stay count (94,458) and non-empty `sofa` and vasopressor tables.
+
+**Alternatives.** Download everything (simplest, hours longer); build only the concepts that are needed (a custom path that
+could miss a dependency); request PhysioNet's Google Cloud copy (requested in parallel, may make the download fast).
+**Reason.** The download runs at 0.3 to 0.7 MB/s and the demo deadline is close.
+
+**Not yet verified on real data:** that mimic-code's full concept build runs cleanly with these six tables empty. If it fails on
+a concept we do not use, the fix is to run only the needed concept scripts.
+
+## D-052 · 2026-11-20 · The selected images are copied from PhysioNet's Google Cloud bucket
+
+**Decision.**
+- PhysioNet granted your Google account read access to `gs://mimic-cxr-jpg-2.1.0.physionet.org` (checked: a file can be
+  read by its exact name; the bucket cannot be listed). `fate_icu.data.cxr.gcs_fetch` copies exactly the images in Stage 1's
+  `image_list.txt` into `MIMIC_CXR_DIR/files/...`, in parallel, skipping finished files and checking each hash, in place of the
+  `wget` of runbook 1.3, which ran at about 0.5 MB/s for the MIMIC-IV files. About 15,000 images at an estimated 1.5 MB each
+  (the full set is 567.1 GB for 377,110 images) is about 20 GB: hours from the web server, minutes from the bucket to the VM.
+- The access is tied to your Google account, so the VM signs in as you for the copy (`gcloud auth login --no-launch-browser`, done
+  by you) and the login is revoked afterwards. The code never reads or logs an account name. Every command carries
+  `--billing-project` because the bucket is requester-pays.
+- Safety: it refuses to run on the laptop (CLAUDE.md A3) and on Windows; refuses any list line that is not `files/....jpg` or could
+  leave the destination; prints counts only, with failures written to a local `problems.txt`. The parallel copy is tested to give the
+  same result as a serial one.
+- The MIMIC-IV tables have no such copy for Google (only BigQuery and AWS), so they keep using `wget` (D-051).
+
+**Alternatives.** `wget` for the images; BigQuery (a different format, our code reads PostgreSQL); AWS S3 (another cloud's account,
+credentials and transfer fees); the physionet Python package (the same web server).
+**Reason.** Images are the largest download by far, and only they have a Google-side copy.
+
+**Not verified on the VM yet:** that the VM, signed in as your account, can read the objects, and the real speed and the transfer
+price to a VM in `us-central1`. The 2026-11-20 test read two files from the laptop. Check both on the first real copy.
+
+## D-053 · 2026-11-20 · A MIMIC-IV-only explainer demo on the open demo data, with a local page
+
+**Decision.**
+- For the demo, `fate_icu.demo` trains a small linear model (ridge logistic for the long-stay question, ridge regression
+  for log LOS) on the train split of the open MIMIC-IV demo (56 stays), using 26 form fields grouped into the contract's
+  feature groups. A user types what is known; a blank field is "not recorded".
+- The reasons are exact, not estimated: a feature's effect on the log-odds is its coefficient times its distance from the
+  training mean. Effects are summed per feature group, the top groups become drivers of an `EvidencePacket`, and
+  `fate_icu.llm.template` writes the sentences. `fate_icu.llm.validate` checks every sentence against the Stage 6 output
+  contract (3 to 5 sentences, cites only known `[D#]`, numbers only from cited drivers or the prediction, direction words,
+  no treatment advice). A failing text is never shown as valid.
+- `python -m fate_icu.demo.app` serves one page on `127.0.0.1` only (Host header checked, strict content-security-policy,
+  no CDN, no internet), with signed driver bars and a disclaimer. Standard library only.
+- Nothing credentialed is involved: the model and its inputs are the open demo and what the user types.
+
+**Alternatives.** The planned TreeSHAP over the internship XGBoost (too sparse on 56 stays: few features ever split);
+the real Stage 3/4 output (needs the GCP run and credentialed data, which must never be shown patient by patient);
+an LLM-written text (Stage 6 proper, needs MedGemma QLoRA and approval of new dependencies).
+
+**Reason.** Shows the whole idea (inputs, prediction, reasons, cited English sentence, checked against a contract) within the
+deadline, without risking credentialed data. It is a stand-in for Stage 6's loop, not a result: its numbers are not reported.

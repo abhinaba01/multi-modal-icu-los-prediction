@@ -29,6 +29,13 @@ Each finished stage gets a summary of at most 10 lines here.
   (runbook section "GCP: the run machine"). Stage 3 saves each arm as it is trained and resumes with
   `--resume <run id>` (`tests/test_models_resume.py`). The laptop's Python was blocked by Windows Application
   Control until the environment was rebuilt from a python.org 3.11 (2026-11-20); 588 tests now pass (3 skipped).
+- **GCP VM (2026-11-20):** project `fate-icu`, VM `fate-icu` (spot `g2-standard-8`, one L4, `us-central1-a`, no public IP,
+  50 GB boot + 450 GB data disk). Set up and checked: GPU driver (signed module, Secure Boot on), data disk and PostgreSQL 14
+  on it, uv, the repo and its environment (torch 2.15.0+cu132 sees the L4, bf16 works), `.env`. Next: the MIMIC download with
+  `fate_icu.utils.mimic_load` (needs the user's PhysioNet password, typed on the VM). The VM costs money while it runs: stop it
+  when idle (`gcloud compute instances stop fate-icu --zone us-central1-a --project fate-icu`).
+- **Stage 3 for the demo (2026-11-20, D-050):** `configs/models/first_pass.yaml` trains B0 to B3 without images, 1 seed; `--resume` then adds the image arms and seeds to the same run. 615 tests pass (3 skipped). MIMIC-IV download to the VM is running (about 0.74 MB/s).
+- **Images from the Google bucket (2026-11-20, D-052):** PhysioNet approved your Google account for the MIMIC-CXR-JPG bucket; `fate_icu.data.cxr.gcs_fetch` copies the Stage 1 image list from it (19 tests). Needs the VM signed in as you (`gcloud auth login --no-launch-browser`) and `--billing-project`; revoke the login afterwards.
 - **Waiting for:** your review of `docs/contract.md` (Stage 0); for Stage 4, your decision on the relative-size condition on drivers; for Stage 5, the Kaggle GPU step,
   a browser spot-check of one StatPearls link (D-043), the open StatPearls questions (D-043) and
   your review of `configs/rag/pubmed_queries.yaml`.
@@ -89,6 +96,14 @@ Afterwards: Stage 3 (docs/stages.md).
   (ExtremalMask 0.85 after tuning on a separate seed, DynaMask 0.21). Half of the selected drivers are unplanted.
 - **Stage 3 changed:** trained models are now saved as checkpoints.
 - **Not done:** the semi-synthetic benchmark on real tensors and the validation report (lab); your review.
+
+### Demo: MIMIC-IV-only explainer page (built 2026-11-20, D-053)
+
+- **What:** `python -m fate_icu.demo.app` serves a local page (127.0.0.1): type a patient's first-24-hour values, get the
+  predicted stay, the chance of a long stay, and cited English sentences giving the reasons.
+- **How:** linear model on 56 open-demo stays; exact per-group effects; `EvidencePacket` -> Stage 6 template -> Stage 6 validator.
+- **Tests:** `tests/test_llm_validate.py`, `tests/test_demo_model.py` (model, input checks, server, foreign Host refused).
+- **Not done:** the real MedGemma QLoRA explainer (needs dependency approval and real packets); demo numbers are not results.
 
 ### Stage 3: encoders, fusion model, baselines (build done, 2026-11-16)
 

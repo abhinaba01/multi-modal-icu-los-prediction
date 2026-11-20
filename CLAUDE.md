@@ -112,7 +112,7 @@ multi_modal_icu_los_prediction/
 
 ## A10. Current status
 
-Phase: build (laptop); real runs on GCP (the lab is unavailable, D-049). Stage 0 build done (the user's contract review is pending). Stages 2, 1, 3 and 4 built (Stage 3 only smoke-run on the demo; Stage 4's synthetic benchmark is reviewed; ExtremalMask is the time-series default, IG elsewhere). Stage 3 resumes per arm for spot VMs (tested; 588 tests pass). Stage 5 code and smoke run done, its public data downloaded, and its corpus and BM25 index built (426,770 passages); the Kaggle GPU step, the dense index and the relevance grades are pending. Next: set up the GCP VM, finish the Stage 5 index, then Stage 6.
+Phase: build (laptop); real runs on GCP (the lab is unavailable, D-049). Stage 0 build done (the user's contract review is pending). Stages 2, 1, 3 and 4 built (Stage 3 only smoke-run on the demo; Stage 4's synthetic benchmark is reviewed; ExtremalMask is the time-series default, IG elsewhere). Stage 3 resumes per arm for spot VMs, can train B0 to B3 without images first and add the image arms and seeds later (tested; 615 tests pass). Stage 5 code and smoke run done, its public data downloaded, and its corpus and BM25 index built (426,770 passages); the Kaggle GPU step, the dense index and the relevance grades are pending. Next: set up the GCP VM, finish the Stage 5 index, then Stage 6.
 
 ---
 
