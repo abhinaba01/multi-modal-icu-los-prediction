@@ -211,7 +211,7 @@ column is missing, or if a selected image is dated after t0.
 - If `date_alignment.share_with_an_xray_during_an_icu_stay` is near zero, the X-ray and ICU
   timelines don't line up. Stop and tell me.
 
-### 1.3 Copy only the selected images (minutes from the bucket; hours with wget)
+### 1.3 Copy only the selected images (about 1 hour from the bucket, measured; about 10 hours with wget)
 
 **Preferred: PhysioNet's Google Cloud bucket** (D-052). It needs the access you requested on the MIMIC-CXR-JPG page
 ("Request access ... Google Cloud Storage Browser", granted to your Google account), and the VM signed in as that account:
@@ -746,3 +746,36 @@ Generate with the DPO adapter using step 3 with `--model <merged_dir> --adapter 
 Paste back: `dataset_stats.json`, `metrics.json` of the SFT and DPO runs (module count, loss, pass rates), `generation_stats.json`
 (retry and fallback rates). Never paste a generated text. The merged model and adapters are credentialed derivatives: keep them
 under the VM's artifacts folder.
+
+## Stage 7: the evaluation harness
+
+**Laptop smoke (about 2 minutes, no data, no download):**
+
+```
+uv run --no-sync python -m fate_icu.eval.run --config configs/eval/smoke.yaml
+```
+
+It evaluates a synthetic bundle (rule-made texts, a word-overlap checker instead of an NLI model) and writes
+`reports/<run id>/`: `metrics.json`, `tables/*.csv` and `*.md` (predictive, explanation faithfulness, groundedness,
+hypotheses, grid), `unattributed_rate.png` and `run_manifest.json`. The numbers say nothing about any real system.
+
+**What is built:** `fate_icu.eval` has `stats` (paired patient-level bootstrap, Holm-Bonferroni, seed summaries, mean and
+ratio CIs), `explanation` (lexicon, driver precision and recall@k, direction accuracy, numeric consistency, claim deletion
+validity, packet sensitivity), `grounding` (ALCE citation recall and precision, pool support, unsupported-claim rate,
+Cohen's kappa, `NLIChecker`), `selection` (H4), `grid` (rows E0 to E8, C1, C2 and what each needs), `controls` (the C1
+summary and C2 random packets) and `run` (the report). Each metric has a unit test on a hand-computed example.
+
+**Not built yet (needs Stage 6 on the VM):** the loader that reads the real artifacts (Stage 3 predictions, Stage 4 packets,
+Stage 5 passages, Stage 6 texts) into a bundle. Until it exists, `configs/eval/full.yaml` stops with a message.
+
+**Before the full run:**
+1. The hypotheses in `docs/hypotheses.md` are registered (dated) and the 100 claim-passage pairs are hand-labelled by you.
+2. Download the NLI model on the VM (public, about 1.7 GB, from Hugging Face): the first use of `NLIChecker` does it.
+3. Expected cost: NLI scoring of 7 rows x 1,000 stays x about 4 claims on the L4 is minutes; the cost is in generating the texts (Stage 6).
+
+**Paste back:** `metrics.json` (aggregates only) and `tables/hypotheses.md`. Never paste a generated text.
+
+**Bootstrap resolution.** With `n_boot` resamples the smallest possible p-value is about 2 / (n_boot + 1): 0.002 for the registered
+1,000, but 0.02 for 100. After Holm over five hypotheses a 100-resample run can never reach 0.05, so use 1,000 for any
+reported test.
+

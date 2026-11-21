@@ -1,0 +1,11 @@
+# Stage 7 smoke run: laptop CPU, a synthetic evaluation bundle (no data, no model) and the offline word-overlap
+# checker. It proves that the harness runs end to end; its numbers say nothing about any real system.
+run_name: eval_smoke
+source: synthetic
+n_stays: 300
+n_boot: 200
+seed: 666
+k: 3
+tau: 0.1
+checker: lexical
+figures: true

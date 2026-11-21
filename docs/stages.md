@@ -19,7 +19,7 @@ Referenced from CLAUDE.md. Read **only the stage I name** ("Start Stage N"); don
 | 3 | Encoders, fusion model, baselines | done 2026-11-16 (smoke run only; lambda untuned) | – |
 | 4 | Attribution and evidence packets | done 2026-11-16 (benchmark reviewed; ExtremalMask default for time series) | – |
 | 6 | LLM explainer (MedGemma + QLoRA) | – | – |
-| 7 | Evaluation harness | – | – |
+| 7 | Evaluation harness | metrics, tests and smoke run done 2026-11-21 (real-artifact loader waits for Stage 6 texts); H1 to H5 registered | – |
 | 8 | Optional extensions | – | – |
 
 ## Stage 2 — Hourly time-series tensors

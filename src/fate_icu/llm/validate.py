@@ -82,6 +82,21 @@ def driver_numbers(driver: Any) -> set[float]:
     return out
 
 
+def unsupported_numbers(sentence: str, packet: Any, passages: Sequence[Any] = ()) -> set[float]:
+    """The numbers of one sentence that belong neither to the prediction nor to a driver or passage it cites.
+
+    This is the number rule of ``check`` for a single sentence; Stage 7 uses it for numeric consistency.
+    """
+    drivers = {_get(d, "id"): d for d in _get(packet, "drivers")}
+    passage_nums = {_get(p, "rid"): _numbers(str(_get(p, "text"))) for p in passages}
+    allowed = set(prediction_numbers(packet))
+    for i in CITATION.findall(sentence):
+        if i in drivers:
+            allowed |= driver_numbers(drivers[i])
+        allowed |= passage_nums.get(i, set())
+    return _numbers(sentence) - allowed
+
+
 def check(text: str, packet: Any, passages: Sequence[Any] = ()) -> Validation:
     """Every rule the text breaks (empty when it meets the contract)."""
     failures: list[str] = []

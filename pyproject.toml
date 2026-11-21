@@ -52,7 +52,9 @@ dependencies = [
 
 [project.optional-dependencies]
 # GPU-only packages, imported lazily inside the functions that need them (CLAUDE.md A5).
-gpu = []
+gpu = [
+    "bitsandbytes>=0.43",
+]
 
 [dependency-groups]
 dev = [

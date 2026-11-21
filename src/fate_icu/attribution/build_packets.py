@@ -99,7 +99,7 @@ def run(config: PacketsConfig) -> dict:
                     models_cfg.model.dropout)  # fmt: skip
         trained = train_model(arm.spec, data, TrainConfig(**models_cfg.train), config.seed)
         source = {"checkpoint": None, "trained_here": True}
-    layout = build_layout(data, encoder.pathology_names)
+    layout = build_layout(data, encoder.pathology_names, image_used="image" in trained.model.spec.modalities)
     space = UnitSpace(layout)
     model = GatedLogit(trained.model, layout)
     image = ImageContext(encoder, prep.image_cache_dir, prep.image_keys, operating_thresholds(encoder))

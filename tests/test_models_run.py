@@ -100,4 +100,4 @@ def test_the_smoke_config_runs_end_to_end_on_the_demo(tmp_path, monkeypatch, set
     assert (checkpoints / "M_seed666.pt").exists() and (checkpoints / "B1_seed666.pt").exists()
     assert not (checkpoints / "B5_seed666.pt").exists()  # late fusion is a mean, not a network
     inputs = json.loads((checkpoints / "inputs.json").read_text())
-    assert inputs["run_id"] == folder.name and inputs["threshold_source"] == "train_q3"
+    assert inputs["run_id"] == folder.name and inputs["threshold_source"] == "frozen"

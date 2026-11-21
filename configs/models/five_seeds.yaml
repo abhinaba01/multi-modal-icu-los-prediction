@@ -1,0 +1,36 @@
+# Stage 3, third pass on the GCP VM: extend the first-pass run to 5 seeds for every arm (B0 to B6, M, M_transformer):
+#   uv run python -m fate_icu.models.run --config configs/models/five_seeds.yaml --resume models_first_pass_20261120T180632Z
+# Seed 666 is already trained for every arm and is skipped; seeds 667 to 670 are added. Same model and recipe (resume_problem checks it).
+# Stage 3 full run (lab, RTX A2000): every arm, 5 seeds, the spec's training recipe.
+# Needs the frozen long-stay threshold in configs/contract.yaml, the Stage 1 link and image
+# cache, and the Stage 2 tensors (docs/lab_runbook.md).
+run_name: models_five_seeds
+source: postgres
+require_frozen_threshold: true
+require_signal: true              # stop if a static feature is constant in train
+seed: 666
+n_seeds: 5                        # the registered tests use 5-seed ensembles (docs/hypotheses.md)
+arms: [B0, B1, B2, B3, B4, B5, B6, M, M_transformer]
+model: {d: 256, heads: 4, layers: 2, dropout: 0.1}
+train:
+  epochs: 50
+  batch_size: 64
+  lr: 0.0003
+  weight_decay: 0.01
+  warmup_frac: 0.05
+  patience: 8
+  lambda_reg: 1.0                 # tune on validation in the lab (never on test)
+  p_drop_image: 0.3
+  p_drop_static: 0.1
+  p_drop_ts: 0.1
+  device: auto
+  autocast_bf16: true             # bf16 autocast on the A2000 (the smoke config stays fp32 on CPU)
+n_boot: 1000
+timeseries_config: configs/timeseries/full.yaml
+cxr_config: configs/cxr/full.yaml
+timeseries_run: null          # set to the Stage 2 run id to reuse its tensors
+cxr_run: cxr_full_20261120T193509Z   # Stage 1 link run of 2026-11-20 (11,498 paired stays; images cached)
+images: mimic
+n_jobs: -1
+cache: true
+strict_sofa: true

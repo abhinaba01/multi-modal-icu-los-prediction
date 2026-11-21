@@ -259,7 +259,8 @@ def attribute(
     out = np.zeros((n, len(space)), dtype=np.float32)
     out[:, space.ts_slice] = TS[ts](model, space, fixed, cfg)
     out[:, space.static_slice] = STATIC[static](model, space, fixed, cfg)
-    out[:, space.concept_slice] = CONCEPT[concept](model, space, fixed, cfg)
-    if space.has_whole_image:
-        out[:, space.whole_image_index] = whole_image_ablation(model, space, fixed, cfg)
+    if "image" in model.net.spec.modalities:  # an EHR-only arm ignores the image: its image units score 0
+        out[:, space.concept_slice] = CONCEPT[concept](model, space, fixed, cfg)
+        if space.has_whole_image:
+            out[:, space.whole_image_index] = whole_image_ablation(model, space, fixed, cfg)
     return out

@@ -1,0 +1,22 @@
+# TRIAL of first_pass.yaml: 50 test stays and tau from 100 validation stays, to time the real run.
+# first pass has no image arm yet. Image units have exactly zero effect for B3 (D-055), so packets carry
+# time-series and static drivers only. When the image arms exist, explain M with configs/attribution/full.yaml.
+# Run once with split: val and once with split: test (the runbook, Stage 4.2).
+run_name: attribution_first_pass_trial
+models_config: configs/models/first_pass.yaml
+checkpoint_run: models_first_pass_20261120T180632Z
+arm: B3
+seed: 666
+split: test
+n_stays: 50
+n_tau_stays: 100
+ts_method: extremal_mask   # the user's choice (D-048); static uses IG
+mask_epochs: 500
+mask_lambda_1: 3.0         # tuned on a separate seed (D-048)
+static_method: ig
+concept_method: ig
+ig_steps: 64
+per_modality: 5
+max_drivers: 5
+tau_quantile: 0.95
+n_random_units: 20

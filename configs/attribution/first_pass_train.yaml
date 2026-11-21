@@ -1,0 +1,22 @@
+# Stage 4 on the GCP VM for the Stage 3 first pass: the EHR-only arm B3 (static + time series), because the
+# first pass has no image arm yet. Image units have exactly zero effect for B3 (D-055), so packets carry
+# time-series and static drivers only. When the image arms exist, explain M with configs/attribution/full.yaml.
+# Run once with split: val and once with split: test (the runbook, Stage 4.2).
+run_name: attribution_first_pass_train
+models_config: configs/models/first_pass.yaml
+checkpoint_run: models_first_pass_20261120T180632Z
+arm: B3
+seed: 666
+split: train
+n_stays: 4000          # a sample of train stays for the Stage 6 training data
+n_tau_stays: 1000         # tau from 1,000 validation stays (the 95th percentile of random-unit deltas); null = all 5,410
+ts_method: extremal_mask   # the user's choice (D-048); static uses IG
+mask_epochs: 500
+mask_lambda_1: 3.0         # tuned on a separate seed (D-048)
+static_method: ig
+concept_method: ig
+ig_steps: 64
+per_modality: 5
+max_drivers: 5
+tau_quantile: 0.95
+n_random_units: 20

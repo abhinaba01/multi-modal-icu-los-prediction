@@ -16,9 +16,9 @@ Each finished stage gets a summary of at most 10 lines here.
   end to end on `mimiciv_demo`.
 - **Stage 1:** built 2026-11-02. 210 tests pass (2 `realdata` skipped); the smoke link
   (demo cohort, synthetic metadata) and the cache step (public images) run end to end.
-- **Stage 5:** code and smoke run done 2026-11-13. Corpus `17a268f4f611` (426,770 passages) and
-  the BM25 index are built (2026-11-15). Still needed: the Kaggle GPU step, the dense index and
-  your relevance grades (`docs/lab_runbook.md`, Stage 5).
+- **Stage 5:** code and smoke run done 2026-11-13. Corpus `17a268f4f611` (426,770 passages), BM25 index
+  (2026-11-15) and the dense index (Kaggle T4, 81 min, installed 2026-11-20; `rag.verify` ok, 12 files). Still needed: your
+  relevance grades (`docs/lab_runbook.md`, Stage 5.5) and copying the index to the GCP VM (5.6).
 - **Stage 3:** built 2026-11-16. 491 tests pass (2 `realdata` skipped, 1 `gpu` skipped); the smoke
   run trains every arm end to end on the demo. Smoke numbers mean nothing (16 test stays).
 - **Stage 4:** built 2026-11-16 (D-048). The packet run works end to end on the demo (16 valid packets); the
@@ -96,6 +96,30 @@ Afterwards: Stage 3 (docs/stages.md).
   (ExtremalMask 0.85 after tuning on a separate seed, DynaMask 0.21). Half of the selected drivers are unplanted.
 - **Stage 3 changed:** trained models are now saved as checkpoints.
 - **Not done:** the semi-synthetic benchmark on real tensors and the validation report (lab); your review.
+
+### Stage 7: evaluation harness (laptop part built, 2026-11-21, D-056)
+
+- **Built:** `fate_icu.eval.{stats, explanation, grounding, selection, grid, controls, run, smoke_data}`; each metric has a unit test on a
+  hand-computed example; `python -m fate_icu.eval.run --config configs/eval/smoke.yaml` writes metrics, tables, a figure and a manifest.
+- **Registered:** H1 to H5 on 2026-11-21 (`docs/hypotheses.md`); H2 compares E5 with C1 so that only the input differs.
+- **First preliminary look (1 seed, not the registered test):** on the 2,360 paired test stays M (AUPRC 0.670) is level with B3 (0.674); the image alone
+  gives AUROC 0.64. If 5 seeds agree, H1 is not supported and the thesis reports that the X-ray adds little.
+- **Not done:** the loader for real artifacts (needs Stage 6 texts), the NLI model download, your 100 hand-labelled claim-passage pairs, 5 seeds of every arm.
+
+### Stages 1 and 4 on the GCP VM (2026-11-20 to 21)
+
+- **Stage 1:** link run `cxr_full_20261120T193509Z`: 11,498 of 55,394 stays have their own X-ray before t0 (train 8,016, val 1,122, test 2,360;
+  20.8 %); images copied from the PhysioNet bucket (11,498, 0 failed, about 1 h) and cached (3 h while Stage 4 ran on the same VM).
+- **Stage 4 (arm B3, EHR only; D-055):** packets for all 11,110 test stays and 4,000 train stays, all valid; tau 0.1071 from 1,000 validation
+  stays. Mean 4.22 drivers per stay (runbook expected 2 to 3): 58 % of test stays hit the 5-driver cap, 24 have none; static 68 %
+  and time series 32 % of drivers; 58 % point toward a longer stay. The relative-size condition on drivers is still open.
+- **Next:** image arms into the first-pass run (`configs/models/image_arms.yaml`, `--resume`), then Stage 4 on arm M.
+
+### Stage 3: first real run on the GCP VM (2026-11-21)
+
+- **Run:** `models_first_pass_20261120T180632Z`, B0 to B3, 1 seed, no images, 27 min on the L4 VM; results in `docs/results_log.md`.
+- **Test AUROC:** B0 0.778, B1 0.793, B2 0.804, B3 0.813 (11,110 test stays); B3 is best on every metric.
+- **Next:** image arms and more seeds into the same run with `--resume` once the Stage 1 link and images exist; tune lambda on validation.
 
 ### Stage 6: explainer code (laptop part built, 2026-11-20, D-054)
 

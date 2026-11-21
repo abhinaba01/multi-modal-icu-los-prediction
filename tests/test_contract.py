@@ -80,9 +80,11 @@ def test_fate_static_uses_only_features_available_at_t0(contract):
     assert len(contract.feature_names("fate_static")) == 77
 
 
-def test_threshold_not_yet_frozen(contract):
-    assert contract.target.long_stay.method == "train_q3"
-    assert contract.target.long_stay.threshold_days is None
+def test_threshold_is_frozen_from_the_first_gcp_run(contract):
+    long_stay = contract.target.long_stay
+    assert long_stay.method == "train_q3"
+    assert long_stay.threshold_days == 4.1
+    assert long_stay.frozen_from == "freeze_threshold_20261120T155009Z"
 
 
 def test_t0_and_qualified_names(contract):

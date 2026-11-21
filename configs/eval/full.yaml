@@ -1,0 +1,13 @@
+# Stage 7 full run (GCP VM): evaluates the Stage 3, 4, 5 and 6 outputs on the test split with the registered
+# hypotheses (docs/hypotheses.md). Needs the NLI checker model (a public model, downloaded on the VM only).
+# The VM loader is added when Stage 6 has generated texts; until then `source: vm` stops with a message.
+run_name: eval_full
+source: vm
+n_boot: 1000
+seed: 666
+k: 3
+tau: 0.1071           # the Stage 4 tau of the explained model (attribution_first_pass_20261120T192745Z)
+checker: nli
+nli_model: MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli
+nli_revision: null    # pin the commit hash printed by the first download
+figures: true

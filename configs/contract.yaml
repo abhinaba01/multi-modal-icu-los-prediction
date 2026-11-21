@@ -110,8 +110,8 @@ target:
     rule: "long = 1 if round(los, 2) > threshold_days else 0"
     method: train_q3             # Q3 of round(los, 2) over the FaTE train split
     quantile: 0.75
-    threshold_days: null         # frozen here once from the first lab run
-    frozen_from: null            # run_id of that lab run
+    threshold_days: 4.1          # frozen 2026-11-20 from the first GCP run (user approved)
+    frozen_from: freeze_threshold_20261120T155009Z   # train split: 38,874 stays, 24.96 % long
     legacy_method: "Q3 of round(los, 2) over the whole final cohort, test included (4.11 d on v3.1)"
 
 feature_groups:

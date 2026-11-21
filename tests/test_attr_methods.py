@@ -146,3 +146,26 @@ def test_removing_a_planted_unit_usually_lowers_a_long_stay_logit(world):
     drops = np.array(drops)
     assert len(drops) >= 5
     assert (drops > 0).mean() >= 0.7 and drops.mean() > 0.3  # a model may use another cue in a stay
+
+
+def test_an_ehr_only_model_gets_zero_scores_for_its_image_units():
+    """Stage 4 on B3 (static + time series): attributing must not fail and the image units score 0."""
+    from stay_data import random_stay_data
+
+    from fate_icu.attribution.gates import build_layout
+    from fate_icu.attribution.units import UnitSpace
+    from fate_icu.models.fusion import ModelSpec
+    from fate_icu.models.train import TrainConfig, train_model
+
+    data = random_stay_data(n=60, seed=2, image_share=0.0)
+    spec = ModelSpec(("static", "ts"), "concat", d=16, heads=2, layers=1, dropout=0.0)
+    net = train_model(spec, data, TrainConfig(epochs=2, batch_size=16, patience=2, augment=True), seed=0)
+    layout = build_layout(data, ["c_a", "c_b", "c_c"], feature_width=9, image_used=False)
+    space = UnitSpace(layout)
+    fixed = stay_tensors(data, data.rows("test")[:6])
+    scores = M.attribute(
+        GatedLogit(net.model, layout), space, fixed, M.MethodConfig(ig_steps=8, seed=0), ts="occlusion"
+    )
+    assert scores.shape == (6, len(space))
+    assert not scores[:, space.concept_slice].any()
+    assert np.abs(scores[:, space.ts_slice]).sum() > 0

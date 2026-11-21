@@ -99,7 +99,7 @@ def test_run_writes_manifest_and_metrics(synth, synth_dir, synth_tables, contrac
     assert manifest["legacy_tree_sha256"] == contract.provenance.legacy_tree_sha256
     assert manifest["seeds"] == [666]
     assert "s3cret" not in json.dumps(manifest) and "alice" not in json.dumps(manifest)
-    assert metrics["threshold_source"] == "train_q3"
+    assert metrics["threshold_source"] == "frozen"
     assert "fate_static" in metrics["models"]
     # counts below 10 are suppressed in every printed/saved aggregate
     for split in metrics["splits"].values():

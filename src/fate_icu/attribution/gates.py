@@ -52,8 +52,15 @@ class GateLayout:
         return len(self.concepts)
 
 
-def build_layout(data: StayData, concepts: list[str], feature_width: int = FEATURE_WIDTH) -> GateLayout:
-    """The gate layout for ``data``; concept fills come from the train stays that have an image."""
+def build_layout(
+    data: StayData, concepts: list[str], feature_width: int = FEATURE_WIDTH, *, image_used: bool = True
+) -> GateLayout:
+    """The gate layout for ``data``; concept fills come from the train stays that have an image.
+
+    ``image_used=False`` is for a model that never reads the image (an EHR-only arm such as B3) on data
+    without images: the concept fills are zeros and removing a concept changes nothing, so image units
+    can never be drivers. With ``image_used=True`` (the default) a data set without train images is an error.
+    """
     if data.static_fill is None:
         raise ValueError("StayData has no static_fill: build it with models.data.assemble")
     groups = list(data.static_groups)
@@ -76,8 +83,11 @@ def build_layout(data: StayData, concepts: list[str], feature_width: int = FEATU
         )
     train_images = data.rows("train", paired_only=True)
     if len(train_images) == 0:
-        raise ValueError("no train stay has an image: concept removal needs a train mean")
-    fill = data.image[train_images][:, feature_width:].mean(axis=0)
+        if image_used:
+            raise ValueError("no train stay has an image: concept removal needs a train mean")
+        fill = np.zeros(len(concepts), dtype=np.float32)  # the model ignores the image: any fill is neutral
+    else:
+        fill = data.image[train_images][:, feature_width:].mean(axis=0)
     delta_fill = float(data.delta.max()) if data.delta.size else 1.0
     return GateLayout(
         list(data.channels), data.values.shape[1], groups, list(concepts), group_of_column, removed,

@@ -134,3 +134,20 @@ def test_layout_refuses_a_wrong_image_width_or_no_train_images(data):
     none = random_stay_data(n=60, seed=2, image_share=0.0)
     with pytest.raises(ValueError, match="no train stay has an image"):
         build_layout(none, CONCEPTS, feature_width=WIDTH)
+
+
+def test_an_ehr_only_model_on_data_without_images_has_image_units_with_no_effect():
+    """Stage 4 on an arm that never reads the image (B3): image units are neutral, never drivers."""
+    none = random_stay_data(n=60, seed=2, image_share=0.0)
+    net = train_model(ModelSpec(("static", "ts"), "concat", **SMALL), none, FAST, seed=0)
+    layout_none = build_layout(none, CONCEPTS, feature_width=WIDTH, image_used=False)
+    assert layout_none.concept_fill.tolist() == [0.0] * len(CONCEPTS)
+    gated = GatedLogit(net.model, layout_none)
+    rows = np.arange(8)
+    fixed = stay_tensors(none, rows)
+    gates = ones_gates(layout_none, len(rows))
+    base = logit(gated, fixed, **gates)
+    removed = dict(gates, concept=torch.zeros_like(gates["concept"]))
+    assert torch.allclose(logit(gated, fixed, **removed), base)  # removing every concept changes nothing
+    removed_ts = dict(gates, ts=torch.zeros_like(gates["ts"]))
+    assert not torch.allclose(logit(gated, fixed, **removed_ts), base)  # the time series still matter

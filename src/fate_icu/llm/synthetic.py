@@ -15,15 +15,15 @@ from fate_icu.attribution.packet import EvidencePacket
 
 # (modality, key, label, text of what was observed at a value, unit)
 _STATIC = (
-    ("sofa", "SOFA score (worst of first 24 h)", "total SOFA score: {}", (1, 14)),
-    ("demographics", "age", "age: {}", (22, 92)),
-    ("labs", "laboratory results (mean of first 24 h)", "mean serum creatinine: {} mg/dL", (0.5, 4.2)),
-    ("vitals", "vital signs (mean of first 24 h)", "mean respiratory rate: {} breaths/min", (11, 32)),
+    ("sofa_static", "SOFA score (worst of first 24 h)", "total SOFA score (worst, first 24 h): {}", (1, 14)),
+    ("demographics", "demographics", "age (years): {}", (22, 92)),
+    ("labs", "laboratory results (mean of first 24 h)", "mean serum creatinine (mg/dL): {}", (0.5, 4.2)),
+    ("vitals", "vital signs (mean of first 24 h)", "mean respiratory rate (breaths/min): {}", (11, 32)),
 )
 _SERIES = (
     ("heart_rate", "heart rate", "bpm", (55, 135)),
     ("creatinine", "serum creatinine", "mg/dL", (0.5, 4.0)),
-    ("map", "mean arterial pressure", "mmHg", (50, 95)),
+    ("mbp", "mean arterial pressure", "mmHg", (50, 95)),
     ("lactate", "lactate", "mmol/L", (0.8, 6.0)),
     ("spo2", "oxygen saturation", "%", (84, 99)),
 )

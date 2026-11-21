@@ -28,7 +28,7 @@ train:
 n_boot: 1000
 timeseries_config: configs/timeseries/full.yaml
 cxr_config: configs/cxr/full.yaml
-timeseries_run: null          # set to the Stage 2 run id to reuse its tensors
+timeseries_run: timeseries_full_20261120T163712Z   # the Stage 2 build of 2026-11-20 (55,394 stays; tensor sha 5b86799f...)
 cxr_run: null
 images: none
 n_jobs: -1

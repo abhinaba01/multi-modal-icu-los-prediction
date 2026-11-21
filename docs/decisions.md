@@ -975,7 +975,9 @@ a concept we do not use, the fix is to run only the needed concept scripts.
   read by its exact name; the bucket cannot be listed). `fate_icu.data.cxr.gcs_fetch` copies exactly the images in Stage 1's
   `image_list.txt` into `MIMIC_CXR_DIR/files/...`, in parallel, skipping finished files and checking each hash, in place of the
   `wget` of runbook 1.3, which ran at about 0.5 MB/s for the MIMIC-IV files. About 15,000 images at an estimated 1.5 MB each
-  (the full set is 567.1 GB for 377,110 images) is about 20 GB: hours from the web server, minutes from the bucket to the VM.
+  (the full set is 567.1 GB for 377,110 images) is about 20 GB: hours from the web server, about an hour from the bucket to the VM (measured 2026-11-20: 11,498 images, about
+  17 GB, 3.4 images per second, with 16 workers while a CPU-heavy job ran on the same VM; whether more workers or an idle
+  VM would be faster was not tested). The first estimate of "minutes" was wrong.
 - The access is tied to your Google account, so the VM signs in as you for the copy (`gcloud auth login --no-launch-browser`, done
   by you) and the login is revoked afterwards. The code never reads or logs an account name. Every command carries
   `--billing-project` because the bucket is requester-pays.
@@ -1017,8 +1019,9 @@ deadline, without risking credentialed data. It is a stand-in for Stage 6's loop
 
 **Decision.**
 - Added `peft`, `trl`, `accelerate` and `datasets` to the dependencies (you approved on 2026-11-20). `bitsandbytes` stays in the
-  `gpu` extra for the VM and is imported lazily; it could not be added to the lock here because `uv` cannot reach PyPI over this
-  network's IPv6 (see the note below), so add it on the VM with `uv add --optional gpu "bitsandbytes>=0.43"`.
+  `gpu` extra for the VM and is imported lazily; it could not be added to the lock on the laptop because `uv` cannot reach PyPI over this
+  network's IPv6 (see the note below), so it was added on the VM (`uv add --optional gpu "bitsandbytes>=0.43"`, 0.50.2 installed,
+  CUDA available) and the resulting `pyproject.toml` and `uv.lock` were copied back.
 - `fate_icu.llm`: `prompt` (one user turn; two worked examples only when sampling), `generate` (greedy first try, up to 3 resamples
   at temperature 0.7, then the deterministic template; retry and fallback rates counted), `dataset` (rejection sampling with
   the contract check and an optional second checker; DPO pairs from failed samples and from corrupted copies, each
@@ -1047,3 +1050,43 @@ few steps and read the printed module count.
 **Environment note (this laptop).** IPv6 to PyPI is broken here, so `uv` waits on it; `uv sync` then fails to fetch the build
 backend (hatchling). Workaround used: the packages were installed with `uv sync --no-install-project`, a `.pth` file in
 `.venv` points at `src/`, and commands run as `uv run --no-sync ...`. Nothing in git depends on it.
+
+
+## D-055 · 2026-11-20 · Stage 4 can explain an EHR-only arm (B3), so packets exist before the image arms do
+
+**Decision.** `build_layout(image_used=False)` and `attribute()` let the packet builder explain a model that never reads an X-ray: its image
+units get a zero fill and a zero score, so they can never be drivers. The default stays strict (data without train images is an
+error for a model that uses images). The first real packets (test: all 11,110 stays; train: 4,000) are for B3, config
+`configs/attribution/first_pass.yaml`; tau is fitted on 1,000 validation stays instead of all 5,410 (a runtime choice; 1,000 gives the 95th
+percentile of random-unit deltas plenty of support). Packets for the image model M follow with `configs/attribution/full.yaml`.
+**Alternatives.** Wait for arm M (hours of delay for the Stage 6 work); explain B3 with a dummy image (would invent image evidence).
+**Reason.** Stage 6 needs real packets and the EHR-only packets are the E1 row of the ablation grid.
+**Open.** Mean 4.22 drivers per stay is above the runbook's expected 2 to 3, because tau is low (0.107) and most stays reach the cap of 5.
+Whether to add the relative-size condition on drivers (your open question from Stage 4) is now the first thing to decide.
+
+## D-056 · 2026-11-21 · Stage 7: the evaluation harness, how each registered metric is computed
+
+**Decision.**
+- Built on the laptop: `fate_icu.eval.{stats, explanation, grounding, selection, grid, controls, run, smoke_data}` and
+  `configs/eval/{smoke,full}.yaml`. `python -m fate_icu.eval.run --config configs/eval/smoke.yaml` evaluates a synthetic bundle end
+  to end; the VM loader for real artifacts is not written (it needs Stage 6 texts) and `source: vm` stops with a message.
+- **Faithfulness is lexicon-based and deterministic:** a mention is a whole-word, longest-first, non-overlapping match of a unit's phrases
+  (channel label and synonyms, static group label and its feature labels, image concept names). A phrase shared by two units is an
+  error. Metrics that are undefined for a text return `None` and are counted, never turned into 0 or 1.
+- **Groundedness separates patient claims from external claims** with the same entailment checker: a sentence entailed by the rendered
+  packet is a patient claim; the others are external and need a passage. This makes E6 (never shown passages) and E7 comparable (H3)
+  without guessing from wording which sentences "sound medical". ALCE recall and precision are computed over the external claims.
+- **The checker for reported numbers is an NLI model** (a claim is supported when entailment is the most probable label), a public
+  DeBERTa-v3-large MNLI/FEVER/ANLI model, which differs from the training-time checker. A deterministic word-overlap checker exists
+  for tests and smoke runs only.
+- **H2 compares E5 with C1, not E7 with C1** (changed from the first draft before registration): the two share the zero-shot model and
+  the prompt style, so only the input (packet or abnormal-value summary) differs.
+- H1 to H5 were registered on 2026-11-21 with the user's approval (`docs/hypotheses.md`); no M-versus-B3 number was read before that.
+
+**Alternatives.** An LLM judge for mentions (not deterministic, not auditable); sentence-level "medical or not" classification by
+keywords (brittle); comparing E7 with C1 (confounded).
+**Known limits.** (1) A paraphrase that drops units ("respiratory rate" for "mean respiratory rate (breaths/min)") is credited to the
+time-series channel of that name, so a static-group driver can be scored as an unattributed mention; check this on real texts
+and on the 100 hand-labelled pairs before relying on driver precision. (2) The bootstrap p-value floor is 2 / (n_boot + 1): use 1,000
+resamples. (3) Everything above is tested on rule-made synthetic data; no real system has been evaluated.
+

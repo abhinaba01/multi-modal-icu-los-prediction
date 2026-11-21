@@ -37,7 +37,16 @@ def test_rounding_and_strict_inequality(contract):
     assert long_stay_labels(los, 4.0, contract).tolist() == [0, 1, 0]
 
 
-def test_unfrozen_threshold_is_computed_or_refused(los_split, contract):
+def _unfrozen_contract() -> Contract:
+    import yaml
+
+    raw = yaml.safe_load(DEFAULT_CONTRACT_PATH.read_text(encoding="utf-8"))
+    raw["target"]["long_stay"].update(threshold_days=None, frozen_from=None)
+    return Contract.model_validate(raw)
+
+
+def test_unfrozen_threshold_is_computed_or_refused(los_split):
+    contract = _unfrozen_contract()  # the repository's contract is frozen (4.1 d); build one that is not
     los, split = los_split
     value, source = resolve_long_stay_threshold(los, split, contract, require_frozen=False)
     assert source == "train_q3" and value == train_q3(los, split, contract)
